@@ -6,6 +6,10 @@ from selenium.webdriver.support import expected_conditions
 from selenium.common.exceptions import WebDriverException
 from selenium.common.exceptions import TimeoutException
 
+from multiprocessing.connection import PipeConnection
+import threading
+import queue
+
 from PIL import Image
 
 import os
@@ -30,23 +34,44 @@ class Neobux:
                       "Va/XIxvs+74BTvLt7fJWD5OR7EGrTyTA9X3fWODJVTHo5MNPKUkNHnzEcL84aaSJZB5OS7Z6GD2O"
                       "4UfnM43kttvtwX+fc/Qh/3LAkJ3iZM8fgE6YK+IA+xEAAAAASUVORK5CYII=")
 
-    def __init__(self):
-        """Initializes the webdriver, first attempting Firefox then Chrome
-        initialization before defaulting to PhantomJS. After initialization
-        of webdriver, launches Neobux site."""
-        self.driver_type = None
-        if not self.driver_type:
+    def __init__(self, driver_type = None, threading = False, connection = None):
+        """Creates a selenium webdriver
+        
+        Initializes the webdriver, using a webdriver of the type specified. If
+        no driver type is specified, attempts to start a Firefox session, then
+        a Chrome session if Firefox fails, then defaults to PhantomJS if Chrome
+        fails. After initialization of webdriver, launches Neobux site.
+
+        The threading argument can be passed a truthy value to make the
+        instance run its methods in another thread. This is to allow access to
+        instance variables while a function is executing. However, to protect
+        the webdriver, some methods manipulating it are synchronous even when
+        run in threads and will block other methods that manipulate the driver.
+
+        A connection can be provided to allow the Neobux instance to receive
+        commands and send return values through a pipe after entering the
+        mainloop. Functions can be invoked by sending specific command strings
+        followed by the argument functions.
+        """
+        #multithreading/multiprocessing setup
+        self._looping = False
+        self.set_connection(connection)
+        self._blocking_threads = queue.Queue()
+        self._current_blocking_thread = None
+        self._nonblocking_threads = []
+        self.set_threading(threading)
+
+        #webdriver setup
+        if driver_type is None or "Firefox" or "geckodriver":
             try:
                 from selenium.webdriver.firefox.options import Options
                 options = Options()
-#                options.headless = True
+                #options.headless = True
                 self.driver = webdriver.Firefox(options = options, service_log_path = os.path.devnull)
                 self.driver_type = "geckodriver"
             except WebDriverException:
-                self.driver_type = None
                 del options
-                del self.driver
-        if not self.driver_type:
+        elif driver_type is None or "Chrome" or "chromedriver":
             try:
                 from selenium.webdriver.chrome.options import Options
                 options = Options()
@@ -57,53 +82,210 @@ class Neobux:
                 self.driver_type = None
                 del options
                 del self.driver
-        if not self.driver_type:
+        elif driver_type is None or "PhantomJS" or "ghostdriver":
             self.driver = webdriver.PhantomJS(service_log_path = os.path.devnull)
             self.driver_type = "ghostdriver"
+        else:
+            raise ValueError("Invalid driver type, must be 'Firefox', 'Chrome', or 'PhantomJS'")
         self.actions = ActionChains(self.driver)
         self.load = WebDriverWait(self.driver, 5, poll_frequency = 0.1)
         self.wait = WebDriverWait(self.driver, 60)
-        self.username = None
-        self.password = None
-        self.secondary_password = None
+
+        #clicker setup
+        self.username = ""
+        self.password = ""
+        self.secondary_password = ""
         self.captcha_image = None
-        self.captcha_key = None
+        self.captcha_key = ""
+        self.login_error = None
         self.ad_count = 0
         self.stale_ad_count = 0
         self.fresh_ad_count = 0
         self.adprize_count = 0
-        self.launch()
 
-    def action_click(self, element):
-        """Helper function to emulate hovering over an element before clicking
-        it. This is necessary when clicking on an advertisement to be allowed to
-        view it."""
+    def mainloop(self):
+        """Runs an infinite loop, enters operation via the connection
+
+        The instance enters an infinite loop. From within the loop, operations
+        are performed by sending instructions in the form of tuples.
+
+        To set or retrieve a data attribute, the first element of the tuple
+        must be the string "data". The second element of the tuple must be a
+        string containing the name of the desired attribute. If there exists a
+        third element, then it is assigned to the specified data attribute. If
+        not, then the value of the data attribute is sent back through the
+        pipe.
+
+        To invoke an instance method, the first element of the tuple must be
+        the string "method". The second element must be a string containing
+        name of the method. All following elements, if any, will be passed to
+        the method as arguments. If the invoked method returns a value, that
+        value is sent back through the pipe.
+
+        Operations pertaining to the mainloop can be performed by sending
+        tuples wherein the second elements are any of the following:
+        * "timeout" - sets or retrieves the time in seconds of how long the
+            mainloop waits for an instruction on each interation
+        * "exit_loop" - breaks out of the infinite loop, allowing mainloop to
+            return
+
+        If an invalid instruction is received by the loop, it is discarded and
+        a string containing an error message is sent back through the pipe.
+
+        This mode of operation is useful if the Neobux clicker object is to be
+        run in a separate thread/process for asynchronous usage. However,
+        calling the mainloop and entering this mode of operation is not
+        necessary to use this class; simply calling the class methods is
+        sufficient for many use cases.
+        """
+        if not self._connection:
+            raise AttributeError("mainloop cannot be run without an instance Connection object")
+        
+        timeout = 0.1
+        while True:
+            if self._connection.poll(timeout):
+                instruction = self._connection.recv()
+            else:
+                continue
+            if isinstance(instruction, tuple):
+                if instruction[0] is "data":
+                    if hasattr(self, instruction[1]):
+                        if len(instruction) == 2:
+                            value = getattr(self, instruction[1])
+                            self._connection.send(value)
+                        else:
+                            setattr(self, instruction[1], instruction[2])
+                    elif instruction[1] is timeout:
+                        if len(instruction) == 2:
+                            self._connection.send(timeout)
+                        else:
+                            timeout = instruction[2]
+                    else:
+                        raise ValueError("Invalid instruction: No such data attribute")
+                elif instruction[0] is "method":
+                    if hasattr(self, instruction[1]):
+                        function = getattr(self, instruction[1])
+                        args = instruction[2:]
+                        retval = function(*args)
+                        if retval is not None:
+                            self._connection.send(retval)
+                    elif instruction[1] is "exit_loop":
+                        break
+                    else:
+                        raise ValueError("Invalid instruction: No such method")
+                else:
+                    raise ValueError("Invalid instruction: data or method instruction not specified")
+            else:
+                raise TypeError("Invalid instruction: not of class tuple")
+            instruction = None
+        self._looping = False
+
+    def set_connection(self, connection = None, targeted = False):
+        """Sets the connection of the clicker instance to the object passed
+
+        If an object that is not a connection is passwed, raises TypeError.
+        To remove the instance's reference to its current connection, pass
+        None or no argument.
+
+        :raises: TypeError
+        """
+        if self._threading and not targeted:
+            self._blocking_threads.put((self.set_connection, connection, True))
+            return
+        if self._looping:
+            connection = self._connection.recv()
+        if isinstance(connection, PipeConnection):
+            self._connection = connection
+        if not connection:
+            self._connection = None
+        else:
+            raise TypeError("argument is not a multiprocessing.connection.Connection object")
+
+    def set_threading(self, threading, targeted = False):
+        """Enables/Disables threading for instance method execution
+        
+        Accepts truthy and falsy values to enable or disable instance
+        threading.
+        
+        If threading is set to false with methods still queued for
+        execution, the remaining methods will all execute and block the
+        instance until they have completed.
+        """
+        if self._threading and not targeted:
+            self._blocking_threads.put((self.set_threading, threading, True))
+            return
+        if self._looping:
+            threading = self._connection.recv()
+        if threading:
+            self._threading = True
+            self._thread
+        else:
+            self._threading = False
+            self._blocking_threads.join()
+            self._current_blocking_thread.join()
+
+    def _thread(self):
+        try:
+            if not self._current_blocking_thread.is_alive():
+                method = self._blocking_threads.get_nowait()
+                self._current_blocking_thread = threading.Thread(target = method[0], args = method[1:])
+                self._current_blocking_thread.start()
+        except queue.Empty:
+            self._current_blocking_thread = None
+        except AttributeError:
+            pass
+        for method in self._nonblocking_threads:
+            threading.Thread(target = method[0], args = method[1:]).start()
+        threading.Timer(0.1, self._thread).start()
+
+    def _action_click(self, element):
+        """Helper function to emulate hovering then clicking an element
+        
+        This is necessary when clicking on an advertisement to be allowed to
+        view it.
+        """
         self.driver.execute_script("return arguments[0].scrollIntoView();", element)
         self.actions.move_to_element(element).perform()
         element.click()
 
-    def launch(self):
-        """Prepares the webdriver for Neobux operation by getting the login screen.
-        To be used after intializing a selenium webdriver."""
+    def launch(self, targeted = False):
+        """Prepares webdriver for Neobux operation by getting the login screen"""
+        if self._threading and not targeted:
+            self._blocking_threads.put((self.launch, True))
+            return
         self.driver.get("https://www.neobux.com/")
         login = self.load.until(expected_conditions.element_to_be_clickable((By.LINK_TEXT, "Login")))
         login.click()
         self.load.until(expected_conditions.element_to_be_clickable((By.ID, "loginform")))
+        self.logged_in = False
 
-    def prompt_login(self):
+    def prompt_login(self, targeted = False):
         """Prompts the user for login credentials from the command line"""
+        if self._threading and not targeted:
+            self._nonblocking_threads.append((self.prompt_login, True))
+            return
         self.username = input("Username: ")
         self.password = getpass.getpass()
         self.secondary_password = getpass.getpass("Secondary Password: ")
 
-    def prompt_captcha(self):
+    def prompt_captcha(self, targeted = False):
         """Prompts the user for the captcha key from the command line"""
+        if self._threading and not targeted:
+            self._nonblocking_threads.append((self.prompt_captcha, True))
+            return
         self.captcha_key = input("Verification Code: ")
 
-    def get_captcha(self):
-        """Returns True and sets captcha image of the clicker if there exists a
-        captcha. Otherwise, returns False
-        Only call this after launching the clicker and before successful login"""
+    def set_captcha(self, targeted = False):
+        """Sets instance captcha image
+        
+        If there exists a captcha at the login screen, self.captcha_image is
+        set to an pillow Image object containing the captcha. If there isn't
+        one, self.captcha_image is set to None. Only call this after launching
+        the clicker and before successful login.
+        """
+        if self._threading and not targeted:
+            self._blocking_threads.put((self.set_captcha, True))
+            return
         login_form = self.driver.find_element_by_id("loginform")
         input_rows = login_form.find_elements_by_xpath(Neobux.LOGIN_ROWS_XPATH)
         if len(input_rows) == 4:
@@ -113,20 +295,23 @@ class Neobux:
             base64_data = src.replace("data:image/png;base64,", "")
             self.captcha_image = Image.open(BytesIO(b64decode(base64_data)))
             #self.captcha_image = Image.composite(self.captcha_image, Image.new("RGB", self.captcha_image.size, "white"), self.captcha_image)
-            return True
         else:
-            return False
+            self.captcha_image = None
 
-    def log_in(self):
-        """Attempts to log into Neobux with the set credentials.
-        If login is successful, returns True. Otherwise, sets the clicker
-        login error message and returns False."""
+    def log_in(self, targeted = False):
+        """Attempts to log in to Neobux using the instance username/password/key values
+
+        If login is successful, self.logged_in is set to True.
+        """
+        if self._threading and not targeted:
+            self._blocking_threads.put((self.log_in, True))
+            return
         login_form = self.driver.find_element_by_id("loginform")
         input_rows = login_form.find_elements_by_xpath(Neobux.LOGIN_ROWS_XPATH)
         username_input = input_rows[0].find_element_by_xpath("./td/input[@placeholder='Username']")
         password_input = input_rows[1].find_element_by_xpath("./td/input[@placeholder='Password']")
         secondary_password_input = input_rows[2].find_element_by_xpath("./td/input[@placeholder='Secondary Password']")
-        if self.get_captcha():
+        if self.set_captcha():
             captcha_input = input_rows[3].find_element_by_xpath("./td/table/tbody/tr/td[@align='left']/input")
             captcha_input.click()
             captcha_input.send_keys(self.captcha_key)
@@ -141,11 +326,12 @@ class Neobux:
         try:
             self.load.until(lambda driver : driver.find_elements_by_xpath(Neobux.DASHBOARD_XPATH) or driver.find_elements_by_xpath(Neobux.ERROR_MESSAGE_XPATH))
             if self.driver.find_elements_by_xpath(Neobux.DASHBOARD_XPATH):
-                return True
+                self.login_error = None
+                self.logged_in = True
             else:
                 self.login_error = driver.find_element_by_xpath(Neobux.ERROR_MESSAGE_XPATH).find_element_by_xpath("..").text
                 self.launch()
-                return False
+                self.logged_in = False
         except TimeoutException:
             if username_input.value_of_css_property("background-color") is "rgb(255, 221, 204)":
                 self.login_error = "Error: Invalid Username"
@@ -155,12 +341,18 @@ class Neobux:
                 self.login_error = "Error: Invalid Secondary Password"
             else:
                 self.login_error = "Error: Possibly unstable, slow, or blocked connection"
-            return False
+            self.logged_in = False
 
-    def view_ads(self):
-        """Navigates to the page of advertisements by clicking the "View
-        Advertisements" link in the navigation menu. Counts and stores the
-        number of advertisements available after navigating."""
+    def view_ads(self, targeted = False):
+        """Navigates to the page of advertisements, sets instance ad count
+        
+        Webdriver clicks "View Advertisements" link in the navigation menu.
+        After navigation, counts and stores the number of advertisements
+        available.
+        """
+        if self._threading and not targeted:
+            self._blocking_threads.put((self.view_ads, True))
+            return
         view = self.driver.find_element_by_link_text("View Advertisements")
         view.click()
         self.load.until(expected_conditions.element_to_be_clickable((By.CLASS_NAME, "cell")))
@@ -171,21 +363,29 @@ class Neobux:
         self.ad_count = len(self.driver.find_elements_by_class_name("cell"))
         print("Availabled advertisements: %i" % (self.ad_count))
 
-    def click_ads(self):
-        """Identifies the advertisements available to click and clicks through
-        each. If the ad has already been clicked, then stale ad count is
-        incremented and immediately moves on to the next ad. If not, then fresh
-        ad count is incremented and waits for advertisement validation before
+    def click_ads(self, targeted = False):
+        """Clicks through the available advertisements
+
+        Identifies the advertisements and iterates through each. On every
+        iteration, an advertisement is clicked. If the advertisement has
+        already been clicked, then stale ad count is incremented and
+        iteration continues. If not, then fresh ad count is incremented and 
+        the instance driver waits for advertisement validation before
         continuing.
+
         Only call this function when the webdriver is on the view
-        advertisements page."""
+        advertisements page.
+        """
+        if self._threading and not targeted:
+            self._blocking_threads.put((self.click_ads, True))
+            return
         ads = self.driver.find_elements_by_class_name("cell")
         for ad in ads:
             print("stale ads: %i, clicked ads: %i" % (self.stale_ad_count, self.fresh_ad_count), end= "\r", flush=True)
-            self.action_click(ad)
+            self._action_click(ad)
             self.load.until(lambda d : "Click the red dot" in ad.text)
             dot = ad.find_element_by_tag_name("img")
-            self.action_click(dot)
+            self._action_click(dot)
             self.driver.switch_to.window(self.driver.window_handles[1])
             header = self.load.until(expected_conditions.element_to_be_clickable(Neobux.AD_HEADER))
             if "You already saw this advertisement" in header.text:
@@ -205,19 +405,33 @@ class Neobux:
                 self.actions = ActionChains(self.driver)
         print("")
 
-    def get_adprize_count(self):
-        """Sets the adprize count to number of remaining adprize.
+    def set_adprize_count(self, targeted = False):
+        """Sets the instance adprize count to the number of adprize
+
         Only call this function when the webdriver is on the view
-        advertisements page."""
+        advertisements page.
+        """
+        if self._threading and not targeted:
+            self._blocking_threads.put((self.set_adprize_count, True))
+            return
         adprize = self.driver.find_element_by_id("adprize").find_element_by_xpath("../div/div[2]")
         self.adprize_count = int(adprize.text)
         print("Adprize: %i" % (self.adprize_count))
 
-    def click_adprize(self):
-        """Clicks through the adprize if the adprize count is greater than zero.
-        Updates the adprize count on each successful advertisement validation.
+    def click_adprize(self, targeted = False):
+        """Clicks through the adprize if the adprize count
+        
+        Sets the instance adprize count to the number of adprize. If the
+        instance adprize count is greater than zero, then the driver clicks
+        through the adprize. Updates the instance adprize count on each
+        advertisement validation.
+
         Only call this function when the webdriver is on the view
-        advertisements page."""
+        advertisements page.
+        """
+        if self._threading and not targeted:
+            self._blocking_threads.put((self.click_adprize, True))
+            return
         adprize = self.driver.find_element_by_id("adprize").find_element_by_xpath("../div/div[2]")
         self.adprize_count = int(adprize.text)
         print("Adprize: %i" % (self.adprize_count))
@@ -241,13 +455,13 @@ class Neobux:
                     break
 
     def __del__(self):
-        """Ensure webdriver cleanup upon clicker deletion"""
+        """Ensure webdriver cleanup upon clicker garbage collection"""
         self.driver.quit()
 
 if __name__ == "__main__":
     clicker = Neobux()
     clicker.prompt_login()
-    if clicker.get_captcha():
+    if clicker.set_captcha():
         clicker.captcha_image.show()
         clicker.prompt_captcha()
     clicker.log_in()
