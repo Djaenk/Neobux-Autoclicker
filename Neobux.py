@@ -54,12 +54,11 @@ class Neobux:
         followed by the argument functions.
         """
         #multithreading/multiprocessing setup
-        self._looping = False
-        self.set_connection(connection)
         self._blocking_threads = queue.Queue()
         self._current_blocking_thread = None
         self._nonblocking_threads = []
         self.set_threading(threading)
+        self.set_connection(connection, True)
 
         #webdriver setup
         if driver_type is None or "Firefox" or "geckodriver":
@@ -102,6 +101,45 @@ class Neobux:
         self.stale_ad_count = 0
         self.fresh_ad_count = 0
         self.adprize_count = 0
+
+    def set_threading(self, threading):
+        """Enables/Disables threading for instance method execution
+        
+        Accepts truthy and falsy values to enable or disable instance
+        threading.
+        
+        If threading is set to false with methods still queued for
+        execution, the remaining methods will all execute and block the
+        instance until they have completed.
+        """
+        if threading:
+            self._threading = True
+            self._assign_threads()
+        else:
+            self._threading = False
+            self._blocking_threads.join()
+
+    def _assign_threads(self):
+        #check 
+        if self._current_blocking_thread is None:
+            blocked = False
+        elif not self._current_blocking_thread.is_alive():
+            self._blocking_threads.task_done()
+            blocked = False
+        else:
+            blocked = True
+        if not blocked:
+            try:
+                method = self._blocking_threads.get_nowait()
+                self._current_blocking_thread = threading.Thread(target = method[0], args = method[1:])
+                self._current_blocking_thread.start()
+            except queue.Empty:
+                self._current_blocking_thread = None
+        for method in self._nonblocking_threads:
+            threading.Thread(target = method[0], args = method[1:]).start()
+        self._nonblocking_threads = []
+        if self._threading:
+            threading.Timer(0.1, self._assign_threads).start()
 
     def mainloop(self):
         """Runs an infinite loop, enters operation via the connection
@@ -178,7 +216,6 @@ class Neobux:
             else:
                 raise TypeError("Invalid instruction: not of class tuple")
             instruction = None
-        self._looping = False
 
     def set_connection(self, connection = None, targeted = False):
         """Sets the connection of the clicker instance to the object passed
@@ -192,51 +229,12 @@ class Neobux:
         if self._threading and not targeted:
             self._blocking_threads.put((self.set_connection, connection, True))
             return
-        if self._looping:
-            connection = self._connection.recv()
         if isinstance(connection, PipeConnection):
             self._connection = connection
         if not connection:
             self._connection = None
         else:
             raise TypeError("argument is not a multiprocessing.connection.Connection object")
-
-    def set_threading(self, threading, targeted = False):
-        """Enables/Disables threading for instance method execution
-        
-        Accepts truthy and falsy values to enable or disable instance
-        threading.
-        
-        If threading is set to false with methods still queued for
-        execution, the remaining methods will all execute and block the
-        instance until they have completed.
-        """
-        if self._threading and not targeted:
-            self._blocking_threads.put((self.set_threading, threading, True))
-            return
-        if self._looping:
-            threading = self._connection.recv()
-        if threading:
-            self._threading = True
-            self._thread
-        else:
-            self._threading = False
-            self._blocking_threads.join()
-            self._current_blocking_thread.join()
-
-    def _thread(self):
-        try:
-            if not self._current_blocking_thread.is_alive():
-                method = self._blocking_threads.get_nowait()
-                self._current_blocking_thread = threading.Thread(target = method[0], args = method[1:])
-                self._current_blocking_thread.start()
-        except queue.Empty:
-            self._current_blocking_thread = None
-        except AttributeError:
-            pass
-        for method in self._nonblocking_threads:
-            threading.Thread(target = method[0], args = method[1:]).start()
-        threading.Timer(0.1, self._thread).start()
 
     def _action_click(self, element):
         """Helper function to emulate hovering then clicking an element
@@ -259,20 +257,14 @@ class Neobux:
         self.load.until(expected_conditions.element_to_be_clickable((By.ID, "loginform")))
         self.logged_in = False
 
-    def prompt_login(self, targeted = False):
+    def prompt_login(self):
         """Prompts the user for login credentials from the command line"""
-        if self._threading and not targeted:
-            self._nonblocking_threads.append((self.prompt_login, True))
-            return
         self.username = input("Username: ")
         self.password = getpass.getpass()
         self.secondary_password = getpass.getpass("Secondary Password: ")
 
-    def prompt_captcha(self, targeted = False):
+    def prompt_captcha(self):
         """Prompts the user for the captcha key from the command line"""
-        if self._threading and not targeted:
-            self._nonblocking_threads.append((self.prompt_captcha, True))
-            return
         self.captcha_key = input("Verification Code: ")
 
     def set_captcha(self, targeted = False):
