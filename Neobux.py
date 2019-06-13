@@ -257,14 +257,20 @@ class Neobux:
         self.load.until(expected_conditions.element_to_be_clickable((By.ID, "loginform")))
         self.logged_in = False
 
-    def prompt_login(self):
+    def prompt_login(self, targeted = False):
         """Prompts the user for login credentials from the command line"""
+        #if self._threading and not targeted:
+        #    self._nonblocking_threads.append((self.prompt_login, True))
+        #    return
         self.username = input("Username: ")
         self.password = getpass.getpass()
         self.secondary_password = getpass.getpass("Secondary Password: ")
 
-    def prompt_captcha(self):
+    def prompt_captcha(self, targeted = False):
         """Prompts the user for the captcha key from the command line"""
+        #if self._threading and not targeted:
+        #    self._nonblocking_threads.append((self.prompt_captcha, True))
+        #    return
         self.captcha_key = input("Verification Code: ")
 
     def set_captcha(self, targeted = False):
