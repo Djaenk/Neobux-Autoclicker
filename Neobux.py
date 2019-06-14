@@ -5,8 +5,7 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.common.action_chains import ActionChains
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions
-from selenium.common.exceptions import WebDriverException
-from selenium.common.exceptions import TimeoutException
+from selenium.common.exceptions import WebDriverException, TimeoutException, NoSuchElementException
 
 from multiprocessing.connection import PipeConnection
 import threading
@@ -19,12 +18,44 @@ from PIL import Image
 
 from enum import Enum
 
+def _discern_page(driver):
+    """Helper function to determine the current page of the webdriver"""
+    url = driver.current_url
+    if url is "about:blank":
+        return NeobuxPage.NONE
+    if url is "https://www.neobux.com/":
+        return NeobuxPage.HOME
+    if "https://www.neobux.com/m/l/" in url:
+        return NeobuxPage.LOGIN
+    if "https://www.neobux.com/m/ga/" in url:
+        return NeobuxPage.VERIFICATION
+    if "https://www.neobux.com/m/tta/" in url:
+        return NeobuxPage.LOGIN_LOG
+    if "https://www.neobux.com/c/" in url:
+        return NeobuxPage.DASHBOARD
+    if "https://www.neobux.com/m/v/" in url:
+        return NeobuxPage.VIEW
+    if "https://www.neobux.com/v/" in url:
+        return NeobuxPage.AD
+    if "https://www.neobux.com/m/l0/" in url:
+        return NeobuxPage.LOGOUT
+    return -1
+
+def _action_click(driver, actions, element):
+    """Helper function to emulate hovering then clicking an element
+        
+    This is necessary when clicking on an advertisement to be allowed to
+    view it.
+    """
+    driver.execute_script("return arguments[0].scrollIntoView();", element)
+    actions.move_to_element(element).perform()
+    element.click()
+
 class Neobux:
     """Neobux advertisement autoclicker object based on python selenium webdriver"""
 
     AD_HEADER = (By.XPATH, "/html/body/table/tbody/tr[1]/td/table/tbody/tr/td/table/tbody/tr/td[1]/table/tbody/tr")
     LOGIN_ROWS_XPATH = "./table/tbody/tr[1]/td/table/tbody/tr" #relative to the login form
-    TWO_STEP_VERIFICATION_XPATH = "/html/body/table/tbody/tr/td/div[contains(text(),'2-Step Verification')"
     DASHBOARD_XPATH = "/html/body/div[2]/div/table"
     ERROR_MESSAGE_XPATH = "//*[text()='Error:']"
     FAVICON_BASE64 = ("iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAABHNCSVQICAgIfAhkiAAAAatJREFU"
@@ -241,16 +272,6 @@ class Neobux:
         else:
             raise TypeError("argument is not a multiprocessing.connection.Connection object")
 
-    def _action_click(self, element):
-        """Helper function to emulate hovering then clicking an element
-        
-        This is necessary when clicking on an advertisement to be allowed to
-        view it.
-        """
-        self.driver.execute_script("return arguments[0].scrollIntoView();", element)
-        self.actions.move_to_element(element).perform()
-        element.click()
-
     def launch(self, targeted = False):
         """Prepares webdriver for Neobux operation by getting the login screen"""
         if self._threading and not targeted:
@@ -262,6 +283,7 @@ class Neobux:
         login.click()
         self.load.until(expected_conditions.element_to_be_clickable((By.ID, "loginform")))
         self.page = NeobuxPage.LOGIN
+        self.set_captcha()
 
     def prompt_login(self, targeted = False):
         """Prompts the user for login credentials from the command line"""
@@ -321,7 +343,7 @@ class Neobux:
         username_input = input_rows[0].find_element_by_xpath("./td/input[@placeholder='Username']")
         password_input = input_rows[1].find_element_by_xpath("./td/input[@placeholder='Password']")
         secondary_password_input = input_rows[2].find_element_by_xpath("./td/input[@placeholder='Secondary Password']")
-        if self.set_captcha():
+        if self.captcha_image:
             captcha_input = input_rows[3].find_element_by_xpath("./td/table/tbody/tr/td[@align='left']/input")
             captcha_input.click()
             captcha_input.send_keys(self.captcha_key)
@@ -334,29 +356,36 @@ class Neobux:
         send = login_form.find_element_by_link_text("send")
         send.click()
         try:
-            self.load.until(expected_conditions.element_to_be_clickable)
-        try:
-            self.load.until(lambda driver : driver.find_elements_by_xpath(Neobux.DASHBOARD_XPATH)
-                                         or driver.find_elements_by_xpath(Neobux.TWO_STEP_VERIFICATION_XPATH)
-                                         or driver.find_elements_by_xpath(Neobux.ERROR_MESSAGE_XPATH))
-            if self.driver.find_elements_by_xpath(Neobux.DASHBOARD_XPATH):
-                self.page = NeobuxPage.DASHBOARD
-                self.login_error = None
-            elif self.driver.find_elements_by_xpath(Neobux.TWO_STEP_VERIFICATION_XPATH):
-                self.page = NeobuxPage.VERIFICATION
-            else:
-                self.login_error = driver.find_element_by_xpath(Neobux.ERROR_MESSAGE_XPATH).find_element_by_xpath("..").text
-                self.launch()
+            self.load.until(lambda driver : "https://www.neobux.com/m/l/" not in driver.current_url)
+            self.login_error = None
+            self.captcha_image = None
+            self.page = _discern_page(self.driver)
         except TimeoutException:
-            if username_input.value_of_css_property("background-color") is "rgb(255, 221, 204)":
+            if self.driver.find_elements_by_xpath(Neobux.ERROR_MESSAGE_XPATH):
+                self.login_error = driver.find_element_by_xpath(Neobux.ERROR_MESSAGE_XPATH).find_element_by_xpath("..").text
+            elif username_input.value_of_css_property("background-color") is "rgb(255, 221, 204)":
                 self.login_error = "Error: Invalid Username"
             elif password_input.value_of_css_property("background-color") is "rgb(255, 221, 204)":
                 self.login_error = "Error: Invalid Password"
             elif secondary_password_input.value_of_css_property("background-color") is "rgb(255, 221, 204)":
                 self.login_error = "Error: Invalid Secondary Password"
-            else:
-                self.login_error = "Error: Unstable, slow, or blocked connection"
 
+    def verify(self, targeted = False):
+        """Attempts completion of 2-step verification using instance authorization number"""
+        if self._threading and not targeted:
+            self._blocking_threads.put((self.verify, True))
+            return
+        if self.page is not NeobuxPage.VERIFICATION:
+            raise RuntimeError("Cannot input authorization code without 2-step verification prompt")
+        verification_form = self.driver.find_element_by_id("form2stps")
+        verification_form.find_element_by_tag_name("input").send_keys(self.authentication_number)
+        verification_form.find_element_by_link_text("send").click()
+        try:
+            self.load.until(expected_conditions.staleness_of(verification_form))
+            self.page = _discern_page(self.driver)
+        except TimeoutException:
+            self.login_error = verification_form.find_element_by_xpath("./*[style='color:#ac0000;font-weight:bold;'").text
+        
     def view_ads(self, targeted = False):
         """Navigates to the page of advertisements, sets instance ad count
         
@@ -370,6 +399,7 @@ class Neobux:
         view = self.driver.find_element_by_link_text("View Advertisements")
         view.click()
         self.load.until(expected_conditions.element_to_be_clickable((By.CLASS_NAME, "cell")))
+        self.page = NeobuxPage.VIEW
         try:
             self.driver.find_element_by_link_text("disable").click()
         except:
@@ -398,10 +428,10 @@ class Neobux:
         ads = self.driver.find_elements_by_class_name("cell")
         for ad in ads:
             print("stale ads: %i, clicked ads: %i" % (self.stale_ad_count, self.fresh_ad_count), end= "\r", flush=True)
-            self._action_click(ad)
+            _action_click(self.driver, self.actions, ad)
             self.load.until(lambda d : "Click the red dot" in ad.text)
             dot = ad.find_element_by_tag_name("img")
-            self._action_click(dot)
+            _action_click(self.driver, self.actions, dot)
             self.driver.switch_to.window(self.driver.window_handles[1])
             self.page = NeobuxPage.AD
             header = self.load.until(expected_conditions.element_to_be_clickable(Neobux.AD_HEADER))
@@ -415,8 +445,11 @@ class Neobux:
                 self.fresh_ad_count += 1
             self.driver.switch_to.window(self.driver.window_handles[0])
             self.page = NeobuxPage.VIEW
-            adprize = self.driver.find_element_by_id("adprize").find_element_by_xpath("../div/div[2]")
-            self.adprize_count = int(adprize.text)
+            try:
+                adprize = self.driver.find_element_by_id("adprize").find_element_by_xpath("../div/div[2]")
+                self.adprize_count = int(adprize.text)
+            except NoSuchElementException:
+                self.adprize_count = 0
             self.actions.reset_actions()
             self.actions = ActionChains(self.driver)
         print("")
@@ -464,7 +497,7 @@ class Neobux:
                 try:
                     header = self.load.until(expected_conditions.element_to_be_clickable(Neobux.AD_HEADER))
                     self.wait.until(expected_conditions.text_to_be_present_in_element(Neobux.AD_HEADER, "Advertisement validated!"))
-                    self.load.until(lambda d : header.find_element_by_id("rmnDv").text)
+                    self.load.until(lambda d : header.find_elements_by_link_text("Next"))
                     self.adprize_count = int(header.find_element_by_id("rmnDv").text)
                     next = header.find_element_by_link_text("Next")
                     next.click()
@@ -488,18 +521,23 @@ class NeobuxPage(Enum):
     HOME = 1
     LOGIN = 2
     VERIFICATION = 3
-    DASHBOARD = 4
-    VIEW = 5
-    AD = 6
+    LOGIN_LOG = 4
+    DASHBOARD = 5
+    VIEW = 6
+    AD = 7
+    LOGOUT = 8
 
 if __name__ == "__main__":
     clicker = Neobux()
     clicker.launch()
     clicker.prompt_login()
-    if clicker.set_captcha():
+    if clicker.captcha_image:
         clicker.captcha_image.show()
         clicker.prompt_captcha()
     clicker.log_in()
+    if clicker.page is NeobuxPage.VERIFICATION:
+        clicker.prompt_authentication_number()
+        clicker.verify()
     clicker.view_ads()
     clicker.click_ads()
     clicker.click_adprize()
