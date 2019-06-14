@@ -359,7 +359,7 @@ class Neobux:
         except:
             pass
         self.ad_count = len(self.driver.find_elements_by_class_name("cell"))
-        print("Availabled advertisements: %i" % (self.ad_count))
+        print("Available advertisements: %i" % (self.ad_count))
 
     def click_ads(self, targeted = False):
         """Clicks through the available advertisements
@@ -458,6 +458,7 @@ class Neobux:
 
 if __name__ == "__main__":
     clicker = Neobux()
+    clicker.launch()
     clicker.prompt_login()
     if clicker.set_captcha():
         clicker.captcha_image.show()
