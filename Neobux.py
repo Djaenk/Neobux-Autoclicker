@@ -1,4 +1,5 @@
 import os
+import traceback
 
 from selenium import webdriver
 from selenium.webdriver.common.by import By
@@ -55,9 +56,9 @@ class Neobux:
     """Neobux advertisement autoclicker object based on python selenium webdriver"""
 
     AD_HEADER = (By.XPATH, "/html/body/table/tbody/tr[1]/td/table/tbody/tr/td/table/tbody/tr/td[1]/table/tbody/tr")
-    LOGIN_ROWS_XPATH = "./table/tbody/tr[1]/td/table/tbody/tr" #relative to the login form
-    DASHBOARD_XPATH = "/html/body/div[2]/div/table"
-    ERROR_MESSAGE_XPATH = "//*[text()='Error:']"
+    LOGIN_ROWS = (By.XPATH, "./table/tbody/tr[1]/td/table/tbody/tr") #relative to the login form
+    ERROR_MESSAGE = (By.XPATH, "//*[text()='Error:']")
+    AD_LIST_BODY = (By.ID, "tl")
     FAVICON_BASE64 = ("iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAABHNCSVQICAgIfAhkiAAAAatJREFU"
                       "OI19k09rE0Echt+1rVA9bNKiByHNh/Hg9xA8SY3uqdX1EL142G4gtVoQD16lBD0ISv6AHoL0UBAD"
                       "Ro2IHmKy+OeSUpBOHg/uJpvs6MALAzPPs/ub+Y0UD2C12+0OAVf/GAxYax21IoK5PcCZSqUyloTn"
@@ -77,10 +78,9 @@ class Neobux:
         fails. After initialization of webdriver, launches Neobux site.
 
         The threading argument can be passed a truthy value to make the
-        instance run its methods in another thread. This is to allow access to
-        instance variables while a function is executing. However, to protect
-        the webdriver, some methods manipulating it are synchronous even when
-        run in threads and will block other methods that manipulate the driver.
+        instance run its methods in another thread. However, to protect
+        the webdriver, some methods manipulating the driver will be placed into
+        a queue to be threaded one at a time.
 
         A connection can be provided to allow the Neobux instance to receive
         commands and send return values through a pipe after entering the
@@ -133,9 +133,9 @@ class Neobux:
         self.captcha_key = ""
         self.authentication_number = ""
         self.login_error = None
-        self.ad_count = 0
-        self.stale_ad_count = 0
-        self.fresh_ad_count = 0
+        self.ad_total = 0
+        self.stale_ads = 0
+        self.click_count = 0
         self.adprize_count = 0
 
     def set_threading(self, threading):
@@ -177,6 +177,25 @@ class Neobux:
         if self._threading:
             threading.Timer(0.1, self._assign_threads).start()
 
+    def set_connection(self, connection = None, targeted = False):
+        """Sets the connection of the clicker instance to the object passed
+
+        If an object that is not a connection is passwed, raises TypeError.
+        To remove the instance's reference to its current connection, pass
+        None or no argument.
+
+        :raises: TypeError
+        """
+        if self._threading and not targeted:
+            self._blocking_threads.put((self.set_connection, connection, True))
+            return
+        if isinstance(connection, PipeConnection):
+            self._connection = connection
+        elif not connection:
+            self._connection = None
+        else:
+            raise TypeError("argument is not a multiprocessing.connection.Connection object")
+
     def mainloop(self):
         """Runs an infinite loop, enters operation via the connection
 
@@ -191,8 +210,8 @@ class Neobux:
         pipe.
 
         To invoke an instance method, the first element of the tuple must be
-        the string "method". The second element must be a string containing
-        name of the method. All following elements, if any, will be passed to
+        the string "method". The second element must be a string containing the
+        name of the method. All proceeding elements, if any, will be passed to
         the method as arguments. If the invoked method returns a value, that
         value is sent back through the pipe.
 
@@ -222,55 +241,37 @@ class Neobux:
             else:
                 continue
             if isinstance(instruction, tuple):
-                if instruction[0] is "data":
+                if instruction[0] == "data":
                     if hasattr(self, instruction[1]):
                         if len(instruction) == 2:
                             value = getattr(self, instruction[1])
                             self._connection.send(value)
                         else:
                             setattr(self, instruction[1], instruction[2])
-                    elif instruction[1] is timeout:
+                    elif instruction[1] == timeout:
                         if len(instruction) == 2:
                             self._connection.send(timeout)
                         else:
                             timeout = instruction[2]
                     else:
                         raise ValueError("Invalid instruction: No such data attribute")
-                elif instruction[0] is "method":
+                elif instruction[0] == "method":
                     if hasattr(self, instruction[1]):
                         function = getattr(self, instruction[1])
                         args = instruction[2:]
                         retval = function(*args)
                         if retval is not None:
                             self._connection.send(retval)
-                    elif instruction[1] is "exit_loop":
-                        break
+                    elif instruction[1] == "exit_loop":
+                        return
                     else:
                         raise ValueError("Invalid instruction: No such method")
                 else:
+                    print(instruction[0])
                     raise ValueError("Invalid instruction: data or method instruction not specified")
             else:
                 raise TypeError("Invalid instruction: not of class tuple")
             instruction = None
-
-    def set_connection(self, connection = None, targeted = False):
-        """Sets the connection of the clicker instance to the object passed
-
-        If an object that is not a connection is passwed, raises TypeError.
-        To remove the instance's reference to its current connection, pass
-        None or no argument.
-
-        :raises: TypeError
-        """
-        if self._threading and not targeted:
-            self._blocking_threads.put((self.set_connection, connection, True))
-            return
-        if isinstance(connection, PipeConnection):
-            self._connection = connection
-        if not connection:
-            self._connection = None
-        else:
-            raise TypeError("argument is not a multiprocessing.connection.Connection object")
 
     def launch(self, targeted = False):
         """Prepares webdriver for Neobux operation by getting the login screen"""
@@ -320,7 +321,7 @@ class Neobux:
             self._blocking_threads.put((self.set_captcha, True))
             return
         login_form = self.driver.find_element_by_id("loginform")
-        input_rows = login_form.find_elements_by_xpath(Neobux.LOGIN_ROWS_XPATH)
+        input_rows = login_form.find_elements(*Neobux.LOGIN_ROWS)
         if len(input_rows) == 4:
             captcha = input_rows[3].find_element_by_xpath("./td/table/tbody/tr/td[@align='right']/img")
             captcha_input = input_rows[3].find_element_by_xpath("./td/table/tbody/tr/td[@align='left']/input")
@@ -339,7 +340,7 @@ class Neobux:
         if self.page is not NeobuxPage.LOGIN:
             raise RuntimeError("Can only attempt to log in from the Neobux Login page")
         login_form = self.driver.find_element_by_id("loginform")
-        input_rows = login_form.find_elements_by_xpath(Neobux.LOGIN_ROWS_XPATH)
+        input_rows = login_form.find_elements(*Neobux.LOGIN_ROWS)
         username_input = input_rows[0].find_element_by_xpath("./td/input[@placeholder='Username']")
         password_input = input_rows[1].find_element_by_xpath("./td/input[@placeholder='Password']")
         secondary_password_input = input_rows[2].find_element_by_xpath("./td/input[@placeholder='Secondary Password']")
@@ -361,8 +362,8 @@ class Neobux:
             self.captcha_image = None
             self.page = _discern_page(self.driver)
         except TimeoutException:
-            if self.driver.find_elements_by_xpath(Neobux.ERROR_MESSAGE_XPATH):
-                self.login_error = driver.find_element_by_xpath(Neobux.ERROR_MESSAGE_XPATH).find_element_by_xpath("..").text
+            if self.driver.find_elements(*Neobux.ERROR_MESSAGE):
+                self.login_error = self.driver.find_element(*Neobux.ERROR_MESSAGE).find_element_by_xpath("..").text
             elif username_input.value_of_css_property("background-color") is "rgb(255, 221, 204)":
                 self.login_error = "Error: Invalid Username"
             elif password_input.value_of_css_property("background-color") is "rgb(255, 221, 204)":
@@ -404,8 +405,18 @@ class Neobux:
             self.driver.find_element_by_link_text("disable").click()
         except:
             pass
-        self.ad_count = len(self.driver.find_elements_by_class_name("cell"))
-        print("Available advertisements: %i" % (self.ad_count))
+        self.ad_total = len(self.driver.find_elements_by_class_name("cell"))
+        self.stale_ads = len(self.driver.find_elements_by_class_name("c_ad0"))
+        self.fixed_ads_individual = len(self.driver.find_elements_by_class_name("c_adfu"))
+        self.fixed_ads = len(self.driver.find_elements_by_class_name("c_adf"))
+        print("Advertisements:                      %i" % (self.ad_total))
+        print("Already clicked:                     %i" % (self.stale_ads))
+        print("Unique Fixed Advertisements:         %i" % (self.unique_fixed_ads))
+        print("Fixed Advertisements:                %i" % (self.fixed_ads))
+        #print("Micro Exposure:                      %i" % (self.micro_exposure))
+        #print("Mini Exposure:                       %i" % (self.mini_exposure))
+        #print("Standard Exposure:                   %i" % (self.standard_exposure))
+        #print("Extended Exposure:                   %i" % (self.extended_exposure))
 
     def click_ads(self, targeted = False):
         """Clicks through the available advertisements
@@ -425,9 +436,13 @@ class Neobux:
             return
         if self.page is not NeobuxPage.VIEW:
             raise RuntimeError("Cannot click ads without viewing advertisements")
-        ads = self.driver.find_elements_by_class_name("cell")
-        for ad in ads:
-            print("stale ads: %i, clicked ads: %i" % (self.stale_ad_count, self.fresh_ad_count), end= "\r", flush=True)
+        for index in range(self.ad_total):
+            ad = self.driver.find_elements_by_class_name("cell")[index]
+            if "c_ad0" in ad.get_attribute("class"):
+                continue
+            advertisements_url = self.driver.current_url
+            self.actions.reset_actions()
+            self.actions = ActionChains(self.driver)
             _action_click(self.driver, self.actions, ad)
             self.load.until(lambda d : "Click the red dot" in ad.text)
             dot = ad.find_element_by_tag_name("img")
@@ -436,22 +451,22 @@ class Neobux:
             self.page = NeobuxPage.AD
             header = self.load.until(expected_conditions.element_to_be_clickable(Neobux.AD_HEADER))
             if "You already saw this advertisement" in header.text:
-                self.stale_ad_count += 1
                 self.driver.close()
             else:
                 self.wait.until(expected_conditions.text_to_be_present_in_element(Neobux.AD_HEADER, "Advertisement validated!"))
+                self.click_count += 1
                 close = header.find_element_by_link_text("Close")
                 close.click()
-                self.fresh_ad_count += 1
+                print("clicked ads: %i" % (self.click_count), end= "\r", flush=True)
             self.driver.switch_to.window(self.driver.window_handles[0])
             self.page = NeobuxPage.VIEW
+            self.load.until(lambda driver : driver.current_url is not advertisements_url)
+            self.load.until(expected_conditions.element_to_be_clickable(Neobux.AD_LIST_BODY))
             try:
                 adprize = self.driver.find_element_by_id("adprize").find_element_by_xpath("../div/div[2]")
                 self.adprize_count = int(adprize.text)
             except NoSuchElementException:
                 self.adprize_count = 0
-            self.actions.reset_actions()
-            self.actions = ActionChains(self.driver)
         print("")
 
     def set_adprize_count(self, targeted = False):
@@ -528,16 +543,22 @@ class NeobuxPage(Enum):
     LOGOUT = 8
 
 if __name__ == "__main__":
-    clicker = Neobux()
-    clicker.launch()
-    clicker.prompt_login()
-    if clicker.captcha_image:
-        clicker.captcha_image.show()
-        clicker.prompt_captcha()
-    clicker.log_in()
-    if clicker.page is NeobuxPage.VERIFICATION:
-        clicker.prompt_authentication_number()
-        clicker.verify()
-    clicker.view_ads()
-    clicker.click_ads()
-    clicker.click_adprize()
+    try:
+        clicker = Neobux()
+        clicker.launch()
+        clicker.prompt_login()
+        if clicker.captcha_image:
+            clicker.captcha_image.show()
+            clicker.prompt_captcha()
+        clicker.log_in()
+        if clicker.page is NeobuxPage.VERIFICATION:
+            clicker.prompt_authentication_number()
+            clicker.verify()
+        print()
+        clicker.view_ads()
+        clicker.click_ads()
+        print()
+        clicker.click_adprize()
+    except Exception:
+        traceback.print_exc()
+        input("Error occurred, press Enter to quit")
