@@ -122,7 +122,7 @@ class Neobux:
             raise ValueError("Invalid driver type, must be 'Firefox', 'Chrome', or 'PhantomJS'")
         self.actions = ActionChains(self.driver)
         self.load = WebDriverWait(self.driver, 5, poll_frequency = 0.1)
-        self.wait = WebDriverWait(self.driver, 60)
+        self.wait = WebDriverWait(self.driver, 90)
 
         #clicker setup
         self.page = NeobuxPage.NONE
@@ -407,7 +407,7 @@ class Neobux:
             pass
         self.ad_total = len(self.driver.find_elements_by_class_name("cell"))
         self.stale_ads = len(self.driver.find_elements_by_class_name("c_ad0"))
-        self.fixed_ads_individual = len(self.driver.find_elements_by_class_name("c_adfu"))
+        self.unique_fixed_ads = len(self.driver.find_elements_by_class_name("c_adfu"))
         self.fixed_ads = len(self.driver.find_elements_by_class_name("c_adf"))
         print("Advertisements:                      %i" % (self.ad_total))
         print("Already clicked:                     %i" % (self.stale_ads))
