@@ -34,6 +34,8 @@ def _discern_page(driver):
         return NeobuxPage.LOGIN_LOG
     if "https://www.neobux.com/c/" in url:
         return NeobuxPage.DASHBOARD
+    if "https://www.neobux.com/c/rs/" in url:
+        return NeobuxPage.STATISTICS
     if "https://www.neobux.com/m/v/" in url:
         return NeobuxPage.VIEW
     if "https://www.neobux.com/v/" in url:
@@ -58,6 +60,7 @@ class Neobux:
     AD_HEADER = (By.XPATH, "/html/body/table/tbody/tr[1]/td/table/tbody/tr/td/table/tbody/tr/td[1]/table/tbody/tr")
     LOGIN_ROWS = (By.XPATH, "./table/tbody/tr[1]/td/table/tbody/tr") #relative to the login form
     ERROR_MESSAGE = (By.XPATH, "//*[text()='Error:']")
+    SUMMARY = (By.XPATH, "/html/body/div[2]/div/table/tbody/tr/td[3]/table/tbody/tr/td/div/table[1]/tbody/tr/td[1]/table")
     AD_LIST_BODY = (By.ID, "tl")
     FAVICON_BASE64 = ("iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAABHNCSVQICAgIfAhkiAAAAatJREFU"
                       "OI19k09rE0Echt+1rVA9bNKiByHNh/Hg9xA8SY3uqdX1EL142G4gtVoQD16lBD0ISv6AHoL0UBAD"
@@ -99,7 +102,7 @@ class Neobux:
             try:
                 from selenium.webdriver.firefox.options import Options
                 options = Options()
-                #options.headless = True
+                options.headless = True
                 self.driver = webdriver.Firefox(options = options, service_log_path = os.path.devnull)
                 self.driver_type = "geckodriver"
             except WebDriverException:
@@ -133,10 +136,34 @@ class Neobux:
         self.captcha_key = ""
         self.authentication_number = ""
         self.login_error = None
-        self.ad_total = 0
-        self.stale_ads = 0
         self.click_count = 0
         self.adprize_count = 0
+        self.ad_counts = {
+            "total" : 0,
+            "stale" : 0,
+            "unique" : 0,
+            "fixed" : 0,
+            "micro" : 0,
+            "mini" : 0,
+            "standard" : 0,
+            "extended" : 0
+        }
+        self.summary = {
+            "membership" : "",
+            "since" : "",
+            "seen" : 0,
+            "main_balance" : 0,
+            "rental_balance" : 0,
+            "points" : 0
+        }
+        self.statistics = {
+            "unique" : {"Clicks" : 0, "Average" : 0},
+            "fixed" : {"Clicks" : 0, "Average" : 0},
+            "micro" : {"Clicks" : 0, "Average" : 0},
+            "mini" : {"Clicks" : 0, "Average" : 0},
+            "standard" : {"Clicks" : 0, "Average" : 0},
+            "extended" : {"Clicks" : 0, "Average" : 0}
+        }
 
     def set_threading(self, threading):
         """Enables/Disables threading for instance method execution
@@ -156,7 +183,7 @@ class Neobux:
             self._blocking_threads.join()
 
     def _assign_threads(self):
-        #check 
+        #check if another blocking thread is alive
         if self._current_blocking_thread is None:
             blocked = False
         elif not self._current_blocking_thread.is_alive():
@@ -174,8 +201,9 @@ class Neobux:
         for method in self._nonblocking_threads:
             threading.Thread(target = method[0], args = method[1:]).start()
         self._nonblocking_threads = []
-        if self._threading:
+        if self._threading or not self._blocking_threads.empty():
             threading.Timer(0.1, self._assign_threads).start()
+            #reschedule self to run after 100 milliseconds while threading is enabled
 
     def set_connection(self, connection = None, targeted = False):
         """Sets the connection of the clicker instance to the object passed
@@ -328,7 +356,7 @@ class Neobux:
             src = captcha.get_attribute("src")
             base64_data = src.replace("data:image/png;base64,", "")
             self.captcha_image = Image.open(BytesIO(b64decode(base64_data)))
-            #self.captcha_image = Image.composite(self.captcha_image, Image.new("RGB", self.captcha_image.size, "white"), self.captcha_image)
+            self.captcha_image = Image.composite(self.captcha_image, Image.new("RGB", self.captcha_image.size, "white"), self.captcha_image)
         else:
             self.captcha_image = None
 
@@ -386,7 +414,57 @@ class Neobux:
             self.page = _discern_page(self.driver)
         except TimeoutException:
             self.login_error = verification_form.find_element_by_xpath("./*[style='color:#ac0000;font-weight:bold;'").text
+
+    def view_dashboard(self, targeted = False):
+        """Navigates to account dashboard and acquires account summary"""
+        if self._threading and not targeted:
+            self._blocking_threads.put((self.view_dashboard, True))
+            return
+        account = self.driver.find_element_by_link_text(self.username)
+        account.click()
+        self.load.until(expected_conditions.element_to_be_clickable(Neobux.SUMMARY))
+        self.page = NeobuxPage.DASHBOARD
+        summary = self.driver.find_element(*Neobux.SUMMARY)
+        data = summary.text
+        data = data.replace(" ", "")
+        data = data.replace("=", "")
+        data = data.replace("+", "")
+        data = data.replace("$", "")
+        data = data.split("\n")
+        data = [entry.split(":")[-1] for entry in data]
+        self.summary["membership"] = data[1]
+        self.summary["since"] = data[2]
+        self.summary["seen"] = int(data[4])
+        self.summary["main_balance"] = int(data[7])
+        self.summary["rental_balance"] = int(data[8])
+        self.summary["points"] = int(data[10])
         
+    def view_statistics(self, targeted = False):
+        """Navigates to account statistics and acquires 10-day click statistics"""
+        if self._threading and not targeted:
+            self._blocking_threads.put((self.view_statistics, True))
+            return
+        statistics = self.driver.find_element_by_id("statBt")
+        chart_bars = self.driver.find_elements_by_class_name("highcharts-color-0")
+        self.load.until(expected_conditions.element_to_be_clickable((By.CLASS_NAME, "highcharts-container")))
+        self.page = NeobuxPage.STATISTICS
+        for bar in chart_bars:
+            try:
+                bar.click()
+                tooltip = self.driver.find_element_by_css_selector(".highcharts-tooltip.highcharts-color-0")
+                label = tooltip.text.split("Clicks: ")[0]
+                data = tooltip.text.split("Clicks: ")[1]
+                if label == "Fixed":
+                    if tooltip.find_elements_by_class_name("highcharts-tooltip-box")[3].get_attribute("stroke") == "#E517F7":
+                        label = "unique"
+                    if tooltip.find_elements_by_class_name("highcharts-tooltip-box")[3].get_attribute("stroke") == "#FF9C00":
+                        label = "fixed"
+                clicks = int(data.split("Average: ")[0])
+                average = int(data.split("Average: ")[1])
+                self.statistics[label.lower()] = {"Clicks" : clicks, "Average" : average}
+            except:
+                pass
+
     def view_ads(self, targeted = False):
         """Navigates to the page of advertisements, sets instance ad count
         
@@ -405,10 +483,14 @@ class Neobux:
             self.driver.find_element_by_link_text("disable").click()
         except:
             pass
-        self.ad_total = len(self.driver.find_elements_by_class_name("cell"))
-        self.stale_ads = len(self.driver.find_elements_by_class_name("c_ad0"))
-        self.unique_fixed_ads = len(self.driver.find_elements_by_class_name("c_adfu"))
-        self.fixed_ads = len(self.driver.find_elements_by_class_name("c_adf"))
+        self.ad_counts["total"] = len(self.driver.find_elements_by_class_name("cell"))
+        self.ad_counts["stale"] = len(self.driver.find_elements_by_class_name("c_ad0"))
+        self.ad_counts["unique"] = len(self.driver.find_elements_by_class_name("c_adfu"))
+        self.ad_counts["fixed"] = len(self.driver.find_elements_by_class_name("c_adf"))
+        self.ad_counts["micro"] = len(self.driver.find_elements_by_class_name("c_ad5"))
+        self.ad_counts["mini"] = len(self.driver.find_elements_by_class_name("c_ad30"))
+        #self.standard_exposure = len(self.driver.find_elements_by_class_name(""))
+        self.extended_exposure = len(self.driver.find_elements_by_class_name("c_ad15"))
         print("Advertisements:                      %i" % (self.ad_total))
         print("Already clicked:                     %i" % (self.stale_ads))
         print("Unique Fixed Advertisements:         %i" % (self.unique_fixed_ads))
@@ -538,9 +620,10 @@ class NeobuxPage(Enum):
     VERIFICATION = 3
     LOGIN_LOG = 4
     DASHBOARD = 5
-    VIEW = 6
-    AD = 7
-    LOGOUT = 8
+    STATISTICS = 6
+    VIEW = 7
+    AD = 8
+    LOGOUT = 9
 
 if __name__ == "__main__":
     try:
