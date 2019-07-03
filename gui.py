@@ -163,51 +163,42 @@ class ClickerDashboard(ttk.Frame):
         self.banner = ImageTk.PhotoImage(data = urlopen(req).read())
         self.linked_banner = tkinter.Button(self, bd = 0, relief = tkinter.SUNKEN, image = self.banner, command = lambda : webbrowser.open_new("https://www.neobux.com/?rh=446A61656E6B"))
         self.linked_banner.grid()
-        self.summary = ttk.LabelFrame(self, text = "Account Summary")
-        self.summary.grid()
-        self.membership_label = ttk.Label(self.summary, text = "Membership:")
-        self.membership_label.grid()
-        self.seen_ads_label = ttk.Label(self.summary, text = "Seen Advertisements:")
-        self.seen_ads_label.grid()
-        self.main_balance_label = ttk.Label(self.summary, text = "Main Balance:")
-        self.main_balance_label.grid()
-        self.rental_balance_label = ttk.Label(self.summary, text = "Rental Balance:")
-        self.rental_balance_label.grid()
-        self.points_label = ttk.Label(self.summary, text = "Points:")
-        self.points_label.grid()
-        self.statistics = ttk.LabelFrame(self, text = "10-day Statistics")
-        self.statistics.grid()
+        self.summary_table = ttk.LabelFrame(self, text = "Account Summary")
+        self.summary_table.grid(row = 1)
+        for i in range(6):
+            setattr(self.summary_table, "row" + str(i), ttk.Frame(self.summary_table))
+            for j in range(2):
+                row = getattr(self.summary_table, "row" + str(i))
+                setattr(row, "column" + str(j), ttk.Label(row, text = "cell"))
+                cell = getattr(row, "column" + str(j))
+                cell.grid()
+        self.statistics_table = ttk.LabelFrame(self, text = "10-day Statistics")
+        self.statistics_table.grid()
         for i in range(7):
-            setattr(self.statistics, "row" + str(i), ttk.Frame(self.statistics))
+            setattr(self.statistics_table, "row" + str(i), ttk.Frame(self.statistics_table))
             for j in range(3):
-                row = getattr(self.statistics, "row" + str(i))
-                setattr(row, "column" + str(j), ttk.Label(row, text = " "))
+                row = getattr(self.statistics_table, "row" + str(i))
+                setattr(row, "column" + str(j), ttk.Label(row, text = "cell"))
+                cell = getattr(row, "column" + str(j))
+                cell.grid()
 
-    def set_summary(self, summary):
-        self.summary.membership_label = ttk.Label(self.summary, text = "Membership:")
-        self.summary.membership_label.grid(row = 0, column = 1)
-        self.summary.membership = ttk.Label(self.summary, text = summary["membership"])
-        self.summary.membership.grid(row = 0, column = 1)
-
-    def set_seen_count(self, count):
-        self.seen_ads = ttk.Label(self.summary, text = str(count))
-        self.seen_ads.grid(row = 1, column = 1)
-
-    def set_main_balance(self, balance):
-        self.main_balance = ttk.Label(self.summary, text = str(balance))
-        self.main_balance.grid(row = 2, column = 1)
-
-    def set_rental_balance(self, balance):
-        self.rental_balance = ttk.Label(self.summary, text = str(balance))
-        self.rental_balance.grid(row= 3, column = 1)
-
-    def set_points(self, points):
-        self.points = ttk.Label(self.summary, text = str(points))
-        self.points.grid(row = 4, column = 1)
+    def populate_summary(self, summary):
+        self.summary_table.row0.column0["text"] = "Membership:"
+        self.summary_table.row0.column1["text"] = summary["membership"]
+        self.summary_table.row1.column0["text"] = "Member Since:"
+        self.summary_table.row1.column1["text"] = summary["since"]
+        self.summary_table.row2.column0["text"] = "Seen Advertisements:"
+        self.summary_table.row2.column1["text"] = summary["seen"]
+        self.summary_table.row3.column0["text"] = "Main Balance:"
+        self.summary_table.row3.column1["text"] = summary["main_balance"]
+        self.summary_table.row4.column0["text"] = "Rental Balance:"
+        self.summary_table.row4.column1["text"] = summary["rental_balance"]
+        self.summary_table.row5.column0["text"] = "Points:"
+        self.summary_table.row5.column1["text"] = summary["points"]
 
     def populate_statistics(self, data):
         for i in range(6):
-            setattr(self.statistics, "row" + str(i), ttk.Label())
+            setattr(self.statistics_table, "row" + str(i), ttk.Label())
 
 class NeobuxGUI(tkinter.Frame):
     """Tkinter-based GUI for interacting with a Neobux autoclicker"""
@@ -227,6 +218,7 @@ class NeobuxGUI(tkinter.Frame):
         # self.driver = multiprocessing.Process(target = build_Neobux_driver, args = (self.driver_connection, ))
         # self.driver.start()
         self.dashboard.grid(row = 1, column = 1)
+        self.grid()
 
     def init_widgets(self):
         self.prompt_frame = ttk.Frame(self, width = 400, height = 225)
