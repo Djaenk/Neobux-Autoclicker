@@ -167,20 +167,22 @@ class ClickerDashboard(ttk.Frame):
         self.summary_table.grid(row = 1)
         for i in range(6):
             setattr(self.summary_table, "row" + str(i), ttk.Frame(self.summary_table))
+            row = getattr(self.summary_table, "row" + str(i))
+            row.grid(row = i, column = 0)
             for j in range(2):
-                row = getattr(self.summary_table, "row" + str(i))
                 setattr(row, "column" + str(j), ttk.Label(row, text = "cell"))
                 cell = getattr(row, "column" + str(j))
-                cell.grid()
+                cell.grid(row = 0, column = j)
         self.statistics_table = ttk.LabelFrame(self, text = "10-day Statistics")
-        self.statistics_table.grid()
+        self.statistics_table.grid(row = 1, column = 1)
         for i in range(7):
             setattr(self.statistics_table, "row" + str(i), ttk.Frame(self.statistics_table))
+            row = getattr(self.statistics_table, "row" + str(i))
+            row.grid(row = i, column = 0)
             for j in range(3):
-                row = getattr(self.statistics_table, "row" + str(i))
                 setattr(row, "column" + str(j), ttk.Label(row, text = "cell"))
                 cell = getattr(row, "column" + str(j))
-                cell.grid()
+                cell.grid(row = 0, column = j)
 
     def populate_summary(self, summary):
         self.summary_table.row0.column0["text"] = "Membership:"
@@ -197,8 +199,7 @@ class ClickerDashboard(ttk.Frame):
         self.summary_table.row5.column1["text"] = summary["points"]
 
     def populate_statistics(self, data):
-        for i in range(6):
-            setattr(self.statistics_table, "row" + str(i), ttk.Label())
+        # TODO
 
 class NeobuxGUI(tkinter.Frame):
     """Tkinter-based GUI for interacting with a Neobux autoclicker"""
