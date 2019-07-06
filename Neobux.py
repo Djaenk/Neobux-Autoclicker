@@ -224,24 +224,22 @@ class Neobux:
         else:
             raise TypeError("argument is not a multiprocessing.connection.Connection object")
 
-    def mainloop(self):
+    def mainloop(self, timeout = 0.1):
         """Runs an infinite loop, enters operation via the connection
 
         The instance enters an infinite loop. From within the loop, operations
         are performed by sending instructions in the form of tuples.
 
         To set or retrieve a data attribute, the first element of the tuple
-        must be the string "data". The second element of the tuple must be a
-        string containing the name of the desired attribute. If there exists a
-        third element, then it is assigned to the specified data attribute. If
-        not, then the value of the data attribute is sent back through the
-        pipe.
+        must be a string containing the name of the desired attribute. If there
+        exists a second element, then it is assigned to the specified data
+        attribute. If not, then the value of the data attribute is sent back
+        through the pipe.
 
         To invoke an instance method, the first element of the tuple must be
-        the string "method". The second element must be a string containing the
-        name of the method. All proceeding elements, if any, will be passed to
-        the method as arguments. If the invoked method returns a value, that
-        value is sent back through the pipe.
+        a string containing the name of the method. All proceeding elements, if
+        any, will be passed to the method as arguments. If the invoked method
+        returns a value, that value is sent back through the pipe.
 
         Operations pertaining to the mainloop can be performed by sending
         tuples wherein the second elements are any of the following:
@@ -261,42 +259,35 @@ class Neobux:
         """
         if not self._connection:
             raise AttributeError("mainloop cannot be run without an instance Connection object")
-        
-        timeout = 0.1
         while True:
             if self._connection.poll(timeout):
                 instruction = self._connection.recv()
             else:
                 continue
             if isinstance(instruction, tuple):
-                if instruction[0] == "data":
-                    if hasattr(self, instruction[1]):
-                        if len(instruction) == 2:
-                            value = getattr(self, instruction[1])
-                            self._connection.send(value)
-                        else:
-                            setattr(self, instruction[1], instruction[2])
-                    elif instruction[1] == timeout:
-                        if len(instruction) == 2:
-                            self._connection.send(timeout)
-                        else:
-                            timeout = instruction[2]
-                    else:
-                        raise ValueError("Invalid instruction: No such data attribute")
-                elif instruction[0] == "method":
-                    if hasattr(self, instruction[1]):
-                        function = getattr(self, instruction[1])
-                        args = instruction[2:]
+                if hasattr(self, instruction[0]):
+                    if callable(instruction[0]):
+                        function = getattr(self, instruction[0])
+                        args = instruction[1:]
                         retval = function(*args)
                         if retval is not None:
                             self._connection.send(retval)
-                    elif instruction[1] == "exit_loop":
-                        return
                     else:
-                        raise ValueError("Invalid instruction: No such method")
+                        variable = getattr(self, instruction[0])
+                        try:
+                            variable = instruction[1]
+                        except IndexError:
+                            self._connection.send(variable)
+                elif instruction[0] == "timeout":
+                    try:
+                        timeout = instruction[1]
+                    except IndexError:
+                        self._connection.send(timeout)
+                elif instruction[0] == "exit_loop":
+                    break
                 else:
                     print(instruction[0])
-                    raise ValueError("Invalid instruction: data or method instruction not specified")
+                    raise ValueError("Invalid instruction: No such attribute")
             else:
                 raise TypeError("Invalid instruction: not of class tuple")
             instruction = None
