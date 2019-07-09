@@ -18,6 +18,13 @@ import webbrowser
 def build_Neobux_driver(connection):
     Neobux(None, True, connection).mainloop()
 
+def get_widget_descendants(widget):
+    descendants = []
+    for child in widget.winfo_children():
+        descendants.append(child)
+        descendants.extend(get_widget_descendants(child))
+    return descendants
+
 class LabeledEntry(ttk.Frame):
 
     def __init__(self, master = None, label = None, showinput = True, exportselection = 1):
@@ -159,47 +166,141 @@ class AuthenticationPrompt(ttk.Frame):
 class ClickerDashboard(ttk.Frame):
     def __init__(self, master = None):
         ttk.Frame.__init__(self, master)
-        req = Request('https://www.neobux.com/imagens/banner3.gif', headers={'User-Agent': 'Mozilla/5.0'})
+        req = Request('https://www.neobux.com/imagens/banner7.gif', headers={'User-Agent': 'Mozilla/5.0'})
         self.banner = ImageTk.PhotoImage(data = urlopen(req).read())
-        self.linked_banner = tkinter.Button(self, bd = 0, relief = tkinter.SUNKEN, image = self.banner, command = lambda : webbrowser.open_new("https://www.neobux.com/?rh=446A61656E6B"))
-        self.linked_banner.grid()
-        self.summary_table = ttk.LabelFrame(self, text = "Account Summary")
-        self.summary_table.grid(row = 1)
+        self.linked_banner = tkinter.Button(self, bd = 0, highlightthickness = 0, relief = tkinter.SUNKEN, image = self.banner, cursor = "hand2", command = lambda : webbrowser.open_new("https://www.neobux.com/?rh=446A61656E6B"))
+        self.linked_banner.grid(row = 0, column = 0, columnspan = 2, padx = 0)
+        self.format_summary()
+        self.label_summary()
+        self.populate_summary(1)
+        self.format_statistics()
+        self.label_statistics()
+        self.populate_statistics(2)
+
+    def format_summary(self):
+        self.summary = ttk.LabelFrame(self, text = "Account Summary", pad = 3)
         for i in range(6):
-            setattr(self.summary_table, "row" + str(i), ttk.Frame(self.summary_table))
-            row = getattr(self.summary_table, "row" + str(i))
-            row.grid(row = i, column = 0)
             for j in range(2):
-                setattr(row, "column" + str(j), ttk.Label(row, text = "cell"))
-                cell = getattr(row, "column" + str(j))
-                cell.grid(row = 0, column = j)
-        self.statistics_table = ttk.LabelFrame(self, text = "10-day Statistics")
-        self.statistics_table.grid(row = 1, column = 1)
-        for i in range(7):
-            setattr(self.statistics_table, "row" + str(i), ttk.Frame(self.statistics_table))
-            row = getattr(self.statistics_table, "row" + str(i))
-            row.grid(row = i, column = 0)
-            for j in range(3):
-                setattr(row, "column" + str(j), ttk.Label(row, text = "cell"))
-                cell = getattr(row, "column" + str(j))
-                cell.grid(row = 0, column = j)
+                cellname = "row" + str(i) + "column" + str(j)
+                setattr(self.summary, cellname, ttk.Frame(self.summary))
+                cell = getattr(self.summary, cellname)
+                cell.grid(row = i, column = j, sticky = tkinter.NSEW)
+        self.refresh_summary = ttk.Button(self.summary, text = "Refresh", command = self.refresh_summary)
+        self.refresh_summary.grid(row = 6, column = 0, columnspan = 2, sticky = tkinter.S)
+        self.summary.grid(row = 1, column = 0, sticky = tkinter.NS)
+    
+    def label_summary(self):
+        self.summary.row0column0.label = ttk.Label(self.summary.row0column0, text = "Membership:")
+        self.summary.row0column0.label.grid()
+        self.summary.row1column0.label = ttk.Label(self.summary.row1column0, text = "Member Since:")
+        self.summary.row1column0.label.grid()
+        self.summary.row2column0.label = ttk.Label(self.summary.row2column0, text = "Seen Advertisements:")
+        self.summary.row2column0.label.grid()
+        self.summary.row3column0.label = ttk.Label(self.summary.row3column0, text = "Main Balance:")
+        self.summary.row3column0.label.grid()
+        self.summary.row4column0.label = ttk.Label(self.summary.row4column0, text = "Rental Balance:")
+        self.summary.row4column0.label.grid()
+        self.summary.row5column0.label = ttk.Label(self.summary.row5column0, text = "Points:")
+        self.summary.row5column0.label.grid()
 
     def populate_summary(self, summary):
-        self.summary_table.row0.column0["text"] = "Membership:"
-        self.summary_table.row0.column1["text"] = summary["membership"]
-        self.summary_table.row1.column0["text"] = "Member Since:"
-        self.summary_table.row1.column1["text"] = summary["since"]
-        self.summary_table.row2.column0["text"] = "Seen Advertisements:"
-        self.summary_table.row2.column1["text"] = summary["seen"]
-        self.summary_table.row3.column0["text"] = "Main Balance:"
-        self.summary_table.row3.column1["text"] = summary["main_balance"]
-        self.summary_table.row4.column0["text"] = "Rental Balance:"
-        self.summary_table.row4.column1["text"] = summary["rental_balance"]
-        self.summary_table.row5.column0["text"] = "Points:"
-        self.summary_table.row5.column1["text"] = summary["points"]
+        summary = {
+            "membership" : "Diamond",
+            "since" : "2019/05/23",
+            "seen" : 0,
+            "main_balance" : 0,
+            "rental_balance" : 0,
+            "points" : 0
+        }
+        self.summary.row0column1.label = ttk.Label(self.summary.row0column1, text = summary["membership"], width = 12, anchor = tkinter.E)
+        self.summary.row0column1.label.grid(sticky = tkinter.E)
+        self.summary.row1column1.label = ttk.Label(self.summary.row1column1, text = summary["since"], width = 12, anchor = tkinter.E)
+        self.summary.row1column1.label.grid(sticky = tkinter.E)
+        self.summary.row2column1.label = ttk.Label(self.summary.row2column1, text = summary["seen"], width = 12, anchor = tkinter.E)
+        self.summary.row2column1.label.grid(sticky = tkinter.E)
+        self.summary.row3column1.label = ttk.Label(self.summary.row3column1, text = summary["main_balance"], width = 12, anchor = tkinter.E)
+        self.summary.row3column1.label.grid(sticky = tkinter.E)
+        self.summary.row4column1.label = ttk.Label(self.summary.row4column1, text = summary["rental_balance"], width = 12, anchor = tkinter.E)
+        self.summary.row4column1.label.grid(sticky = tkinter.E)
+        self.summary.row5column1.label = ttk.Label(self.summary.row5column1, text = summary["points"], width = 12, anchor = tkinter.E)
+        self.summary.row5column1.label.grid(sticky = tkinter.E)
 
-    def populate_statistics(self, data):
-        # TODO
+    def refresh_summary(self):
+        self.summary.state(["disabled"])
+        for descendant in get_widget_descendants(self.summary):
+            descendant.state(["disabled"])
+
+    def format_statistics(self):
+        self.statistics = ttk.LabelFrame(self, text = "10-day Statistics", pad = 3)
+        for i in range(7):
+            for j in range(3):
+                cellname = "row" + str(i) + "column" + str(j)
+                setattr(self.statistics, cellname, ttk.Frame(self.statistics))
+                cell = getattr(self.statistics, cellname)
+                cell.grid(row = i, column = j, sticky = tkinter.NSEW)
+        self.refresh_statistics = ttk.Button(self.statistics, text = "Refresh")
+        self.refresh_statistics.grid(row = 7, column = 0, columnspan = 3, sticky = tkinter.SE)
+        self.statistics.grid(row = 1, column = 1, sticky = tkinter.NS)
+
+    def label_statistics(self):
+        self.statistics.row0column0.label = ttk.Label(self.statistics.row0column0, text = "Fixed Advertisements")
+        self.statistics.row0column0.label.grid(row = 0, column = 0)
+        self.statistics.row0column0.canvas = tkinter.Canvas(self.statistics.row0column0, height = 11, width = 11, highlightthickness = 0)
+        self.statistics.row0column0.canvas.create_oval(0, 0, 10, 10, fill = "#e517f7", outline = "#999999")
+        self.statistics.row0column0.canvas.grid(row = 0, column = 1, padx = 3)
+        self.statistics.row1column0.label = ttk.Label(self.statistics.row1column0, text = "Fixed Advertisements")
+        self.statistics.row1column0.label.grid(row = 0, column = 0)
+        self.statistics.row1column0.canvas = tkinter.Canvas(self.statistics.row1column0, height = 11, width = 11, highlightthickness = 0)
+        self.statistics.row1column0.canvas.create_oval(0, 0, 10, 10, fill = "#eeaa23", outline = "#999999")
+        self.statistics.row1column0.canvas.grid(row = 0, column = 1, padx = 3)
+        self.statistics.row2column0.label = ttk.Label(self.statistics.row2column0, text = "Micro Exposure")
+        self.statistics.row2column0.label.grid()
+        self.statistics.row3column0.label = ttk.Label(self.statistics.row3column0, text = "Mini Exposure")
+        self.statistics.row3column0.label.grid()
+        self.statistics.row4column0.label = ttk.Label(self.statistics.row4column0, text = "Standard Exposure")
+        self.statistics.row4column0.label.grid()
+        self.statistics.row5column0.label = ttk.Label(self.statistics.row5column0, text = "Extended Exposure")
+        self.statistics.row5column0.label.grid()
+        self.statistics.row6column0.label = ttk.Label(self.statistics.row6column0, text = "Total")
+        self.statistics.row6column0.label.grid()
+
+    def populate_statistics(self, statistics):
+        statistics = {
+            "unique" : {"Clicks" : 0, "Average" : 0},
+            "fixed" : {"Clicks" : 0, "Average" : 0},
+            "micro" : {"Clicks" : 0, "Average" : 0},
+            "mini" : {"Clicks" : 0, "Average" : 0},
+            "standard" : {"Clicks" : 0, "Average" : 0},
+            "extended" : {"Clicks" : 0, "Average" : 0}
+        }
+        self.statistics.row0column1.label = ttk.Label(self.statistics.row0column1, text = statistics["unique"]["Clicks"], width = 7, anchor = tkinter.E)
+        self.statistics.row0column1.label.grid(sticky = tkinter.E)
+        self.statistics.row0column2.label = ttk.Label(self.statistics.row0column2, text = statistics["unique"]["Average"], width = 7, anchor = tkinter.E)
+        self.statistics.row0column2.label.grid(sticky = tkinter.E)
+        self.statistics.row1column1.label = ttk.Label(self.statistics.row1column1, text = statistics["fixed"]["Clicks"], width = 7, anchor = tkinter.E)
+        self.statistics.row1column1.label.grid(sticky = tkinter.E)
+        self.statistics.row1column2.label = ttk.Label(self.statistics.row1column2, text = statistics["fixed"]["Average"], width = 7, anchor = tkinter.E)
+        self.statistics.row1column2.label.grid(sticky = tkinter.E)
+        self.statistics.row2column1.label = ttk.Label(self.statistics.row2column1, text = statistics["micro"]["Clicks"], width = 7, anchor = tkinter.E)
+        self.statistics.row2column1.label.grid(sticky = tkinter.E)
+        self.statistics.row2column2.label = ttk.Label(self.statistics.row2column2, text = statistics["micro"]["Average"], width = 7, anchor = tkinter.E)
+        self.statistics.row2column2.label.grid(sticky = tkinter.E)
+        self.statistics.row3column1.label = ttk.Label(self.statistics.row3column1, text = statistics["mini"]["Clicks"], width = 7, anchor = tkinter.E)
+        self.statistics.row3column1.label.grid(sticky = tkinter.E)
+        self.statistics.row3column2.label = ttk.Label(self.statistics.row3column2, text = statistics["mini"]["Average"], width = 7, anchor = tkinter.E)
+        self.statistics.row3column2.label.grid(sticky = tkinter.E)
+        self.statistics.row4column1.label = ttk.Label(self.statistics.row4column1, text = statistics["standard"]["Clicks"], width = 7, anchor = tkinter.E)
+        self.statistics.row4column1.label.grid(sticky = tkinter.E)
+        self.statistics.row4column2.label = ttk.Label(self.statistics.row4column2, text = statistics["standard"]["Average"], width = 7, anchor = tkinter.E)
+        self.statistics.row4column2.label.grid(sticky = tkinter.E)
+        self.statistics.row5column1.label = ttk.Label(self.statistics.row5column1, text = statistics["extended"]["Clicks"], width = 7, anchor = tkinter.E)
+        self.statistics.row5column1.label.grid(sticky = tkinter.E)
+        self.statistics.row5column2.label = ttk.Label(self.statistics.row5column2, text = statistics["extended"]["Average"], width = 7, anchor = tkinter.E)
+        self.statistics.row5column2.label.grid(sticky = tkinter.E)
+        self.statistics.row6column1.label = ttk.Label(self.statistics.row6column1, text = sum(statistics[key]["Clicks"] for key in statistics), width = 7, anchor = tkinter.E)
+        self.statistics.row6column1.label.grid(sticky = tkinter.E)
+        self.statistics.row6column2.label = ttk.Label(self.statistics.row6column2, text = sum(statistics[key]["Average"] for key in statistics), width = 7, anchor = tkinter.E)
+        self.statistics.row6column2.label.grid(sticky = tkinter.E)
 
 class NeobuxGUI(tkinter.Frame):
     """Tkinter-based GUI for interacting with a Neobux autoclicker"""
@@ -219,6 +320,7 @@ class NeobuxGUI(tkinter.Frame):
         # self.driver = multiprocessing.Process(target = build_Neobux_driver, args = (self.driver_connection, ))
         # self.driver.start()
         self.dashboard.grid(row = 1, column = 1)
+
         self.grid()
 
     def init_widgets(self):
