@@ -351,8 +351,10 @@ class Neobux:
             base64_data = src.replace("data:image/png;base64,", "")
             self.captcha_image = Image.open(BytesIO(b64decode(base64_data)))
             self.captcha_image = Image.composite(self.captcha_image, Image.new("RGB", self.captcha_image.size, "white"), self.captcha_image)
+            self.page = NeobuxPage.CAPTCHA
         else:
             self.captcha_image = None
+            self.page = NeobuxPage.LOGIN
 
     def log_in(self, targeted = False):
         """Attempts to log in to Neobux using the instance username/password/key values"""
