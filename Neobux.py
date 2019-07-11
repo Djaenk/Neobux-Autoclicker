@@ -24,25 +24,26 @@ def _discern_page(driver):
     url = driver.current_url
     if url is "about:blank":
         return NeobuxPage.NONE
-    if url is "https://www.neobux.com/":
+    elif url is "https://www.neobux.com/":
         return NeobuxPage.HOME
-    if "https://www.neobux.com/m/l/" in url:
+    elif "https://www.neobux.com/m/l/" in url:
         return NeobuxPage.LOGIN
-    if "https://www.neobux.com/m/ga/" in url:
+    elif "https://www.neobux.com/m/ga/" in url:
         return NeobuxPage.VERIFICATION
-    if "https://www.neobux.com/m/tta/" in url:
+    elif "https://www.neobux.com/m/tta/" in url:
         return NeobuxPage.LOGIN_LOG
-    if "https://www.neobux.com/c/" in url:
+    elif "https://www.neobux.com/c/" in url:
         return NeobuxPage.DASHBOARD
-    if "https://www.neobux.com/c/rs/" in url:
+    elif "https://www.neobux.com/c/rs/" in url:
         return NeobuxPage.STATISTICS
-    if "https://www.neobux.com/m/v/" in url:
+    elif "https://www.neobux.com/m/v/" in url:
         return NeobuxPage.VIEW
-    if "https://www.neobux.com/v/" in url:
+    elif "https://www.neobux.com/v/" in url:
         return NeobuxPage.AD
-    if "https://www.neobux.com/m/l0/" in url:
+    elif "https://www.neobux.com/m/l0/" in url:
         return NeobuxPage.LOGOUT
-    return -1
+    else:
+        return None
 
 def _action_click(driver, actions, element):
     """Helper function to emulate hovering then clicking an element
@@ -129,11 +130,13 @@ class Neobux:
 
         #clicker setup
         self.page = NeobuxPage.NONE
-        self.username = ""
-        self.password = ""
-        self.secondary_password = ""
+        self.credentials = {
+            "username" : "",
+            "password" : "",
+            "secondary" : "",
+            "captcha" : ""
+        }
         self.captcha_image = None
-        self.captcha_key = ""
         self.authentication_number = ""
         self.login_error = None
         self.click_count = 0
@@ -310,16 +313,16 @@ class Neobux:
         #if self._threading and not targeted:
         #    self._nonblocking_threads.append((self.prompt_login, True))
         #    return
-        self.username = input("Username: ")
-        self.password = getpass.getpass()
-        self.secondary_password = getpass.getpass("Secondary Password: ")
+        self.credentials["username"] = input("Username: ")
+        self.credentials["password"] = getpass.getpass()
+        self.credentials["secondary"] = getpass.getpass("Secondary Password: ")
 
     def prompt_captcha(self, targeted = False):
         """Prompts the user for the captcha key from the command line"""
         #if self._threading and not targeted:
         #    self._nonblocking_threads.append((self.prompt_captcha, True))
         #    return
-        self.captcha_key = input("Verification Code: ")
+        self.credentials["captcha"] = input("Verification Code: ")
 
     def prompt_authentication_number(self, targeted = False):
         """Prompts the user for the 2-Step Verification code from the command line"""
@@ -366,13 +369,13 @@ class Neobux:
         if self.captcha_image:
             captcha_input = input_rows[3].find_element_by_xpath("./td/table/tbody/tr/td[@align='left']/input")
             captcha_input.click()
-            captcha_input.send_keys(self.captcha_key)
+            captcha_input.send_keys(self.credentials["captcha"])
         username_input.click()
-        username_input.send_keys(self.username)
+        username_input.send_keys(self.credentials["username"])
         password_input.click()
-        password_input.send_keys(self.password)
+        password_input.send_keys(self.credentials["password"])
         secondary_password_input.click()
-        secondary_password_input.send_keys(self.secondary_password)
+        secondary_password_input.send_keys(self.credentials["secondary"])
         send = login_form.find_element_by_link_text("send")
         send.click()
         try:
@@ -605,16 +608,17 @@ class Neobux:
         self.driver.quit()
 
 class NeobuxPage(Enum):
-    NONE = 0
-    HOME = 1
-    LOGIN = 2
-    VERIFICATION = 3
-    LOGIN_LOG = 4
-    DASHBOARD = 5
-    STATISTICS = 6
-    VIEW = 7
-    AD = 8
-    LOGOUT = 9
+    NONE = ""
+    HOME = "home"
+    LOGIN = "login" #login page without captcha prompt
+    CAPTCHA = "captcha" #login page with captcha prompt
+    VERIFICATION = "verification"
+    LOGIN_LOG = "login_log"
+    DASHBOARD = "dashboard"
+    STATISTICS = "statistics"
+    VIEW = "view"
+    AD = "ad"
+    LOGOUT = "logout"
 
 if __name__ == "__main__":
     try:
