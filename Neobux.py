@@ -141,22 +141,12 @@ class Neobux:
         self.login_error = None
         self.click_count = 0
         self.adprize_count = 0
-        self.ad_counts = {
-            "total" : 0,
-            "stale" : 0,
-            "unique" : 0,
-            "fixed" : 0,
-            "micro" : 0,
-            "mini" : 0,
-            "standard" : 0,
-            "extended" : 0
-        }
         self.summary = {
             "membership" : "",
-            "since" : "",
-            "seen" : 0,
-            "main_balance" : 0,
-            "rental_balance" : 0,
+            "member since" : "",
+            "seen advertisements" : 0,
+            "main balance" : 0,
+            "rental balance" : 0,
             "points" : 0
         }
         self.statistics = {
@@ -166,6 +156,16 @@ class Neobux:
             "mini" : {"Clicks" : 0, "Average" : 0},
             "standard" : {"Clicks" : 0, "Average" : 0},
             "extended" : {"Clicks" : 0, "Average" : 0}
+        }
+        self.ad_counts = {
+            "total" : 0,
+            "stale" : 0,
+            "unique" : 0,
+            "fixed" : 0,
+            "micro" : 0,
+            "mini" : 0,
+            "standard" : 0,
+            "extended" : 0
         }
 
     def set_threading(self, threading):
