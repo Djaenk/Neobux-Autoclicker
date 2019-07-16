@@ -140,7 +140,6 @@ class Neobux:
         self.authentication_number = ""
         self.login_error = None
         self.click_count = 0
-        self.adprize_count = 0
         self.summary = {
             "membership" : "",
             "member since" : "",
@@ -158,14 +157,14 @@ class Neobux:
             "extended" : {"Clicks" : 0, "Average" : 0}
         }
         self.ad_counts = {
-            "total" : 0,
             "stale" : 0,
             "unique" : 0,
             "fixed" : 0,
             "micro" : 0,
             "mini" : 0,
             "standard" : 0,
-            "extended" : 0
+            "extended" : 0,
+            "adprize" : 0
         }
 
     def set_threading(self, threading):
@@ -479,7 +478,6 @@ class Neobux:
             self.driver.find_element_by_link_text("disable").click()
         except:
             pass
-        self.ad_counts["total"] = len(self.driver.find_elements_by_class_name("cell"))
         self.ad_counts["stale"] = len(self.driver.find_elements_by_class_name("c_ad0"))
         self.ad_counts["unique"] = len(self.driver.find_elements_by_class_name("c_adfu"))
         self.ad_counts["fixed"] = len(self.driver.find_elements_by_class_name("c_adf"))
@@ -542,9 +540,9 @@ class Neobux:
             self.load.until(expected_conditions.element_to_be_clickable(Neobux.AD_LIST_BODY))
             try:
                 adprize = self.driver.find_element_by_id("adprize").find_element_by_xpath("../div/div[2]")
-                self.adprize_count = int(adprize.text)
+                self.ad_counts["adprize"] = int(adprize.text)
             except NoSuchElementException:
-                self.adprize_count = 0
+                self.ad_counts["adprize"] = 0
         print("")
 
     def set_adprize_count(self, targeted = False):
@@ -559,8 +557,8 @@ class Neobux:
         if self.page is not NeobuxPage.VIEW:
             raise RuntimeError("Cannot acquire adprize count without viewing advertisements")
         adprize = self.driver.find_element_by_id("adprize").find_element_by_xpath("../div/div[2]")
-        self.adprize_count = int(adprize.text)
-        print("Adprize: %i" % (self.adprize_count))
+        self.ad_counts["adprize"] = int(adprize.text)
+        print("Adprize: %i" % (self.ad_counts["adprize"]))
 
     def click_adprize(self, targeted = False):
         """Clicks through the adprize if the adprize count
@@ -579,24 +577,24 @@ class Neobux:
         if self.page is not NeobuxPage.VIEW:
             raise RuntimeError("Cannot click adprize without viewing advertisements")
         adprize = self.driver.find_element_by_id("adprize").find_element_by_xpath("../div/div[2]")
-        self.adprize_count = int(adprize.text)
-        print("Adprize: %i" % (self.adprize_count))
-        if self.adprize_count > 0:
+        self.ad_counts["adprize"] = int(adprize.text)
+        print("Adprize: %i" % (self.ad_counts["adprize"]))
+        if self.ad_counts["adprize"] > 0:
             adprize.click()
             self.driver.switch_to.window(self.driver.window_handles[1])
             self.page = NeobuxPage.AD
             while True:
-                print("Adprize remaining: %i   " % (self.adprize_count), end= "\r", flush=True)
+                print("Adprize remaining: %i   " % (self.ad_counts["adprize"]), end= "\r", flush=True)
                 try:
                     header = self.load.until(expected_conditions.element_to_be_clickable(Neobux.AD_HEADER))
                     self.wait.until(expected_conditions.text_to_be_present_in_element(Neobux.AD_HEADER, "Advertisement validated!"))
                     self.load.until(lambda d : header.find_elements_by_link_text("Next"))
-                    self.adprize_count = int(header.find_element_by_id("rmnDv").text)
+                    self.ad_counts["adprize"] = int(header.find_element_by_id("rmnDv").text)
                     next = header.find_element_by_link_text("Next")
                     next.click()
                 except TimeoutException:
-                    if self.adprize_count == 1:
-                        self.adprize_count = 0
+                    if self.ad_counts["adprize"] == 1:
+                        self.ad_counts["adprize"] = 0
                         close = header.find_element_by_link_text("Close")
                         close.click()
                         self.driver.switch_to.window(self.driver.window_handles[0])

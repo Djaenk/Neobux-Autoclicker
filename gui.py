@@ -47,41 +47,42 @@ class LabeledEntry(ttk.Frame):
         self.label.state(["!disabled"])
         self.entry.state(["!disabled"])
 
-class LabelTable(ttk.LabelFrame):
-    def __init__(self, title, rows, columns, data, master = None):
-        ttk.LabelFrame.__init__(self, master, text = title)
-        self.row_count = rows
-        self.column_count = columns
-        self.data = data
-        self.format_table()
-        self.label_table()
-        self.populate_table()
+class TableFrame(ttk.Frame):
+    def __init__(self, master = None):
+        ttk.Frame.__init__(self, master)
         
-    def format_table(self):
-        for i in range(self.row_count):
-            for j in range(self.column_count):
+    def format(self, rows, columns):
+        self.rows = rows
+        self.columns = columns
+        for i in range(self.rows):
+            for j in range(self.columns):
                 cellname = "row" + str(i) + "column" + str(j)
                 setattr(self, cellname, ttk.Frame(self))
                 cell = getattr(self, cellname)
                 cell.grid(row = i, column = j, sticky = tkinter.NSEW)
 
-    def label_table(self):
-        for i in range(self.row_count):
+    def update(self, data):
+        self.data = data  
+        self._label_table()
+        self._populate_table()
+
+    def _label_table(self):
+        for i in range(self.rows):
             cell = getattr(self, "row" + str(i) + "column0")
             cell.label = ttk.Label(cell, text = self.data.keys(i))
             cell.label.grid()
 
-    def populate_table(self):
-        for i in range(self.row_count):
-            if self.column_count == 2:
+    def _populate_table(self):
+        for i in range(self.rows):
+            if self.columns == 2:
                 cell = getattr(self, "row" + str(i) + "column1")
                 cell.label = ttk.Label(cell, text = self.data.items(i))
                 cell.label.grid()
             else:
-                for j in range(1, self.column_count):
+                for j in range(1, self.columns):
                     cell = getattr(self, "row" + str(i) + "column" + str(j))
                     cell.label = ttk.Label(cell, text = self.data.items(i).items(j))
-                    cell.label.grid()
+                    cell.label.grid()  
 
 class NeobuxLoadingGraphic(tkinter.Canvas):
 
@@ -202,7 +203,32 @@ class AuthenticationPrompt(ttk.Frame):
 class ClickerInterface(ttk.Frame):
     def __init__(self, master = None):
         ttk.Frame.__init__(self, master)
-        self.
+        self.start = ttk.Button(self, text = "Start")
+        self._init_widgets()
+
+    def _init_widgets(self):
+        req = Request('https://www.neobux.com/imagens/banner7.gif', headers={'User-Agent': 'Mozilla/5.0'})
+        self.banner = ImageTk.PhotoImage(data = urlopen(req).read())
+        self.linked_banner = tkinter.Button(self, bd = 0, highlightthickness = 0, relief = tkinter.SUNKEN, image = self.banner, cursor = "hand2", command = lambda : webbrowser.open_new("https://www.neobux.com/?rh=446A61656E6B"))
+        self.linked_banner.grid(row = 0, column = 0, columnspan = 2, padx = 0)        self.advertisements = ttk.LabelFrame(self)
+        self.advertisements.table = TableFrame(self.advertisements)
+        self.advertisements.refresh = ttk.Button(self.advertisements, text = "Refresh")
+        self.summary = ttk.LabelFrame(self, text = "Account Summary")
+        self.summary.table = TableFrame(self.summary)
+        self.summary.refresh = ttk.Button(self.summary, text = "Refresh")
+        self.statistics = ttk.LabelFrame(self, text = "10-Day Statistics")
+        self.statistics.table = TableFrame(self.statistics)
+        self.statistics.refresh = ttk.LabelFrame(self.statistics, text = "Refresh")
+        
+    def disable(self):
+        self.advertisements.refresh.state(["disabled"])
+        self.summary.refresh.state(["disabled"])
+        self.statistics.refresh.state(["disabled"])
+
+    def enable(self):
+        self.advertisements.refresh.state(["!disabled"])
+        self.summary.refresh.state(["!disabled"])
+        self.statistics.refresh.state(["!disabled"])
 
 class NeobuxGUI(tkinter.Frame):
     """Tkinter-based GUI for interacting with a Neobux autoclicker"""
@@ -213,7 +239,7 @@ class NeobuxGUI(tkinter.Frame):
         self.master.iconphoto(False, icon)
         self.master.title(title)
         self.config(bg = "white")
-        self.init_widgets()
+        self._init_widgets()
         self.grid_rowconfigure(0, weight = 1)
         self.grid_rowconfigure(2, weight = 1)
         self.grid_columnconfigure(0, weight = 1)
@@ -225,7 +251,7 @@ class NeobuxGUI(tkinter.Frame):
 
         self.grid()
 
-    def init_widgets(self):
+    def _init_widgets(self):
         self.prompt_frame = ttk.Frame(self, width = 400, height = 225)
         self.prompt_frame.grid_rowconfigure(0, weight = 1)
         self.prompt_frame.grid_rowconfigure(2, weight = 1)
