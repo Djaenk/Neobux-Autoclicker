@@ -18,15 +18,7 @@ import webbrowser
 def build_Neobux_driver(connection):
     Neobux(None, True, connection).mainloop()
 
-def get_widget_descendants(widget):
-    descendants = []
-    for child in widget.winfo_children():
-        descendants.append(child)
-        descendants.extend(get_widget_descendants(child))
-    return descendants
-
 class LabeledEntry(ttk.Frame):
-
     def __init__(self, master = None, label = None, showinput = True, exportselection = 1):
         ttk.Frame.__init__(self, master)
         self.label = ttk.Label(self, text = label, font = ("Segoe UI", -16))
@@ -48,14 +40,16 @@ class LabeledEntry(ttk.Frame):
         self.entry.state(["!disabled"])
 
 class TableFrame(ttk.Frame):
-    def __init__(self, master = None):
-        ttk.Frame.__init__(self, master)
+    def __init__(self, master = None, **options):
+        ttk.Frame.__init__(self, master, **options)
         
     def format(self, rows, columns):
         self.rows = rows
         self.columns = columns
         for i in range(self.rows):
+            self.rowconfigure(i, weight = 1)
             for j in range(self.columns):
+                self.columnconfigure(j, weight = 1)
                 cellname = "row" + str(i) + "column" + str(j)
                 setattr(self, cellname, ttk.Frame(self))
                 cell = getattr(self, cellname)
@@ -69,20 +63,20 @@ class TableFrame(ttk.Frame):
     def _label_table(self):
         for i in range(self.rows):
             cell = getattr(self, "row" + str(i) + "column0")
-            cell.label = ttk.Label(cell, text = self.data.keys(i))
-            cell.label.grid()
+            cell.label = ttk.Label(cell, text = list(self.data.keys())[i])
+            cell.label.grid(sticky = tkinter.W)
 
     def _populate_table(self):
         for i in range(self.rows):
             if self.columns == 2:
                 cell = getattr(self, "row" + str(i) + "column1")
-                cell.label = ttk.Label(cell, text = self.data.items(i))
-                cell.label.grid()
+                cell.label = ttk.Label(cell, text = list(self.data.values())[i])
+                cell.label.grid(sticky = tkinter.E)
             else:
                 for j in range(1, self.columns):
                     cell = getattr(self, "row" + str(i) + "column" + str(j))
-                    cell.label = ttk.Label(cell, text = self.data.items(i).items(j))
-                    cell.label.grid()  
+                    cell.label = ttk.Label(cell, text = list(list(self.data.values())[i].values())[j - 1])
+                    cell.label.grid(sticky = tkinter.E)
 
 class NeobuxLoadingGraphic(tkinter.Canvas):
 
@@ -200,26 +194,101 @@ class AuthenticationPrompt(ttk.Frame):
     def get(self):
         return self.authentication_entry.get()
 
-class ClickerInterface(ttk.Frame):
+class ClickerDashboard(tkinter.Frame):
     def __init__(self, master = None):
-        ttk.Frame.__init__(self, master)
-        self.start = ttk.Button(self, text = "Start")
-        self._init_widgets()
+        # Initial Window Setup
+        tkinter.Frame.__init__(self, master)
+        icon = ImageTk.PhotoImage(data = b64decode(Neobux.FAVICON_BASE64))
+        self.master.iconphoto(False, icon)
+        self.master.title("Neobux Clicker")
 
-    def _init_widgets(self):
+        # Banner Initialization
         req = Request('https://www.neobux.com/imagens/banner7.gif', headers={'User-Agent': 'Mozilla/5.0'})
         self.banner = ImageTk.PhotoImage(data = urlopen(req).read())
-        self.linked_banner = tkinter.Button(self, bd = 0, highlightthickness = 0, relief = tkinter.SUNKEN, image = self.banner, cursor = "hand2", command = lambda : webbrowser.open_new("https://www.neobux.com/?rh=446A61656E6B"))
-        self.linked_banner.grid(row = 0, column = 0, columnspan = 2, padx = 0)        self.advertisements = ttk.LabelFrame(self)
-        self.advertisements.table = TableFrame(self.advertisements)
-        self.advertisements.refresh = ttk.Button(self.advertisements, text = "Refresh")
-        self.summary = ttk.LabelFrame(self, text = "Account Summary")
-        self.summary.table = TableFrame(self.summary)
-        self.summary.refresh = ttk.Button(self.summary, text = "Refresh")
-        self.statistics = ttk.LabelFrame(self, text = "10-Day Statistics")
-        self.statistics.table = TableFrame(self.statistics)
-        self.statistics.refresh = ttk.LabelFrame(self.statistics, text = "Refresh")
+        self.linked_banner = tkinter.Button(self, bd = 0, highlightthickness = 0,
+            relief = tkinter.FLAT, image = self.banner, cursor = "hand2",
+            command = lambda : webbrowser.open_new("https://www.neobux.com/?rh=446A61656E6B"))
+        self.linked_banner.grid(row = 0, column = 0, columnspan = 2, pady = (0, 5))
         
+        # Advertisements Table
+        self.advertisements = ttk.LabelFrame(self, text = "Available Advertisements")
+        self.advertisements.grid(row = 1, column = 1, sticky = tkinter.EW)
+        self.advertisements.columnconfigure(0, weight = 1)
+        self.advertisements.table = TableFrame(self.advertisements)
+        self.advertisements.table.format(8, 2)
+        self.advertisements.table.grid(row = 0, column = 0, rowspan = 3, sticky = tkinter.EW)
+        
+        # Summary Table
+        self.summary = ttk.LabelFrame(self, text = "Account Summary")
+        self.summary.grid(row = 2, column = 0, sticky = tkinter.EW)
+        self.summary.columnconfigure(0, weight = 1)
+        self.summary.table = TableFrame(self.summary)
+        self.summary.table.format(6, 2)
+        self.summary.table.grid(row = 0, column = 0, sticky = tkinter.EW)
+        self.summary.refresh = ttk.Button(self.summary, text = "Refresh")
+        self.summary.refresh.grid(row = 1, column = 0)
+        
+        # Statistics Table
+        self.statistics = ttk.LabelFrame(self, text = "10-Day Statistics")
+        self.statistics.grid(row = 2, column = 1, sticky = tkinter.EW)
+        self.statistics.columnconfigure(0, weight = 1)
+        self.statistics.table = TableFrame(self.statistics)
+        self.statistics.table.format(6, 3)
+        self.statistics.table.grid(row = 0, column = 0, sticky = tkinter.EW)
+        self.statistics.refresh = ttk.Button(self.statistics, text = "Refresh")
+        self.statistics.refresh.grid(row = 1, column = 0)
+        
+        # Clicker Interface
+        self.start = ttk.Button(self, text = "Start")
+        self.interface = ttk.Frame(self)
+        self.interface.login = ttk.Button(self.interface, text = "Login")
+        self.interface.login.grid(row = 0, column = 0)
+        self.interface.start = ttk.Button(self.interface, text = "Start")
+        self.interface.start.grid(row = 1, column = 0)
+        self.interface.stop = ttk.Button(self.interface, text = "Stop")
+        self.interface.stop.grid(row = 2, column = 0)
+        # self.interface_connection, self.driver_connection = multiprocessing.Pipe()
+        # self.driver = multiprocessing.Process(target = build_Neobux_driver, args = (self.driver_connection, ))
+        # self.driver.start()
+        self.interface.grid(row = 1, column = 0)
+        self.grid()
+
+    def update_advertisements(self, dict):
+        dict = {
+            "stale" : 0,
+            "unique" : 0,
+            "fixed" : 0,
+            "micro" : 0,
+            "mini" : 0,
+            "standard" : 0,
+            "extended" : 0,
+            "adprize" : 0
+        }
+        self.advertisements.table.update(dict)
+
+    def update_summary(self, dict):
+        dict = {
+            "membership" : "",
+            "member since" : "",
+            "seen advertisements" : 0,
+            "main balance" : 0,
+            "rental balance" : 0,
+            "points" : 0
+        }
+        self.summary.table.update(dict)
+        print(self.summary.table.columns)
+
+    def update_statistics(self, dict):
+        dict = {
+            "unique" : {"Clicks" : 0, "Average" : 0},
+            "fixed" : {"Clicks" : 0, "Average" : 0},
+            "micro" : {"Clicks" : 0, "Average" : 0},
+            "mini" : {"Clicks" : 0, "Average" : 0},
+            "standard" : {"Clicks" : 0, "Average" : 0},
+            "extended" : {"Clicks" : 0, "Average" : 0}
+        }
+        self.statistics.table.update(dict)
+
     def disable(self):
         self.advertisements.refresh.state(["disabled"])
         self.summary.refresh.state(["disabled"])
@@ -247,8 +316,7 @@ class NeobuxGUI(tkinter.Frame):
         # self.interface_connection, self.driver_connection = multiprocessing.Pipe()
         # self.driver = multiprocessing.Process(target = build_Neobux_driver, args = (self.driver_connection, ))
         # self.driver.start()
-        self.dashboard.grid(row = 1, column = 1)
-
+        self.advertisements.grid(row = 1, column = 1)
         self.grid()
 
     def _init_widgets(self):
@@ -262,7 +330,7 @@ class NeobuxGUI(tkinter.Frame):
         self.authentication_prompt = AuthenticationPrompt(self.prompt_frame)
         self.captcha_prompt = CaptchaPrompt(self.prompt_frame, self.authentication_prompt.grid)
         self.login_prompt = LoginPrompt(self.prompt_frame, self.captcha_prompt.grid)
-        self.dashboard = ClickerDashboard(self)
+        self.advertisements = ClickerDashboard(self)
 
     def show_prompt(self, prompt):
         for child in self.prompt_frame.winfo_children:
@@ -298,7 +366,10 @@ class NeobuxGUI(tkinter.Frame):
         return super().destroy()
 
 if __name__ == "__main__":
-    clicker = NeobuxGUI(title = "Neobux Clicker")
+    clicker = ClickerDashboard()
+    clicker.update_advertisements(" ")
+    clicker.update_statistics(" ")
+    clicker.update_summary(" ")
     clicker.mainloop()
     # conn1, conn2 = multiprocessing.Pipe()
     # process = multiprocessing.Process(target = build_Neobux_driver, args = (conn2, ))
