@@ -54,6 +54,8 @@ class TableFrame(ttk.Frame):
                 setattr(self, cellname, ttk.Frame(self))
                 cell = getattr(self, cellname)
                 cell.grid(row = i, column = j, sticky = tkinter.NSEW)
+                cell.rowconfigure(0, weight = 1)
+                cell.columnconfigure(0, weight = 1)
 
     def update(self, data):
         self.data = data  
@@ -202,6 +204,10 @@ class ClickerDashboard(tkinter.Frame):
         self.master.iconphoto(False, icon)
         self.master.title("Neobux Clicker")
 
+        # Generate Tab Group
+        self.tabgroup = ttk.Notebook(self)
+        self.tabgroup.grid(row = 3, sticky = tkinter.NSEW)
+
         # Banner Initialization
         req = Request('https://www.neobux.com/imagens/banner7.gif', headers={'User-Agent': 'Mozilla/5.0'})
         self.banner = ImageTk.PhotoImage(data = urlopen(req).read())
@@ -211,32 +217,25 @@ class ClickerDashboard(tkinter.Frame):
         self.linked_banner.grid(row = 0, column = 0, columnspan = 2, pady = (0, 5))
         
         # Advertisements Table
-        self.advertisements = ttk.LabelFrame(self, text = "Available Advertisements")
-        self.advertisements.grid(row = 1, column = 1, sticky = tkinter.EW)
-        self.advertisements.columnconfigure(0, weight = 1)
-        self.advertisements.table = TableFrame(self.advertisements)
-        self.advertisements.table.format(8, 2)
-        self.advertisements.table.grid(row = 0, column = 0, rowspan = 3, sticky = tkinter.EW)
+        self.advertisements = TableFrame(self)
+        self.tabgroup.add(self.advertisements, text = "Advertisements")
+        self.advertisements.format(8, 2)
+        self.advertisements.refresh = ttk.Button(self.advertisements, text = "Refresh")
+        self.advertisements.refresh.grid(row = 9, column = 0, columnspan = 2)
         
         # Summary Table
-        self.summary = ttk.LabelFrame(self, text = "Account Summary")
-        self.summary.grid(row = 2, column = 0, sticky = tkinter.EW)
-        self.summary.columnconfigure(0, weight = 1)
-        self.summary.table = TableFrame(self.summary)
-        self.summary.table.format(6, 2)
-        self.summary.table.grid(row = 0, column = 0, sticky = tkinter.EW)
+        self.summary = TableFrame(self)
+        self.tabgroup.add(self.summary, text = "Account")
+        self.summary.format(6, 2)
         self.summary.refresh = ttk.Button(self.summary, text = "Refresh")
-        self.summary.refresh.grid(row = 1, column = 0)
+        self.summary.refresh.grid(row = 7, column = 0, columnspan = 2)
         
         # Statistics Table
-        self.statistics = ttk.LabelFrame(self, text = "10-Day Statistics")
-        self.statistics.grid(row = 2, column = 1, sticky = tkinter.EW)
-        self.statistics.columnconfigure(0, weight = 1)
-        self.statistics.table = TableFrame(self.statistics)
-        self.statistics.table.format(6, 3)
-        self.statistics.table.grid(row = 0, column = 0, sticky = tkinter.EW)
+        self.statistics = TableFrame(self)
+        self.tabgroup.add(self.statistics, text = "Statistics")
+        self.statistics.format(6, 3)
         self.statistics.refresh = ttk.Button(self.statistics, text = "Refresh")
-        self.statistics.refresh.grid(row = 1, column = 0)
+        self.statistics.refresh.grid(row = 7, column = 0, columnspan = 3)
         
         # Clicker Interface
         self.start = ttk.Button(self, text = "Start")
@@ -264,7 +263,7 @@ class ClickerDashboard(tkinter.Frame):
             "extended" : 0,
             "adprize" : 0
         }
-        self.advertisements.table.update(dict)
+        self.advertisements.update(dict)
 
     def update_summary(self, dict):
         dict = {
@@ -275,8 +274,7 @@ class ClickerDashboard(tkinter.Frame):
             "rental balance" : 0,
             "points" : 0
         }
-        self.summary.table.update(dict)
-        print(self.summary.table.columns)
+        self.summary.update(dict)
 
     def update_statistics(self, dict):
         dict = {
@@ -287,7 +285,7 @@ class ClickerDashboard(tkinter.Frame):
             "standard" : {"Clicks" : 0, "Average" : 0},
             "extended" : {"Clicks" : 0, "Average" : 0}
         }
-        self.statistics.table.update(dict)
+        self.statistics.update(dict)
 
     def disable(self):
         self.advertisements.refresh.state(["disabled"])
